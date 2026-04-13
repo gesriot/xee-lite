@@ -69,6 +69,10 @@ Transfer destinations are up to 9 configurable folders. Assign them once via **T
 
 ---
 
+## Installation
+
+**Download (easiest):** grab `XeeLite.dmg` from the [Releases](../../releases) page, open it, and drag XeeLite into your Applications folder.
+
 ## Build and run
 
 **Run in place (development):**
@@ -87,12 +91,14 @@ Transfer destinations are up to 9 configurable folders. Assign them once via **T
 ./scripts/package-app.sh
 ```
 
+**Package as `.dmg`** (builds the app and wraps it in a disk image):
+```bash
+./scripts/package-dmg.sh
+```
+
 Place an icon at `Resources/icon.png` and it will be baked into the bundle automatically.
 
-The finished app is written to `dist/XeeLite.app`. Open it with a double-click or:
-```bash
-open dist/XeeLite.app
-```
+The finished app is written to `dist/XeeLite.app` and the disk image to `dist/XeeLite.dmg`.
 
 ---
 
