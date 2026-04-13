@@ -6,6 +6,7 @@ struct ImageViewerView: View {
     @EnvironmentObject private var zoomState: ZoomState
     @AppStorage("showsStatusBar") private var showsStatusBar = true
     @AppStorage("showsInspector") private var showsInspector = false
+    @StateObject private var animatedPlayback = AnimatedImagePlaybackState()
     @State private var window: NSWindow?
     @State private var isFullScreen = false
     @State private var isChromeVisible = true
@@ -42,9 +43,11 @@ struct ImageViewerView: View {
         .onAppear {
             appState.loadInitialImage()
             zoomState.updateImagePixelSize(appState.currentImagePixelSize)
+            animatedPlayback.setAnimatedImage(appState.currentAnimatedImage)
         }
         .onChange(of: appState.currentImageURL) { _, newURL in
             updateWindowTitle(with: newURL)
+            animatedPlayback.setAnimatedImage(appState.currentAnimatedImage)
         }
         .onChange(of: appState.currentImagePixelSize) { _, newSize in
             zoomState.updateImagePixelSize(newSize)
@@ -136,20 +139,22 @@ struct ImageViewerView: View {
             Color.black.opacity(0.92)
                 .ignoresSafeArea()
 
-            if let image = appState.currentImage {
+            if let foregroundImage = displayedImage {
                 GeometryReader { proxy in
                     ZStack {
                         // Use a blurred version of the same image as a backdrop so
                         // the main image can stay fully visible without black bars.
-                        Image(nsImage: image)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                            .blur(radius: 24)
-                            .opacity(0.75)
-                            .clipped()
+                        if let backgroundImage = backgroundImage {
+                            Image(nsImage: backgroundImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                                .blur(radius: 24)
+                                .opacity(0.75)
+                                .clipped()
+                        }
 
-                        Image(nsImage: image)
+                        Image(nsImage: foregroundImage)
                             .resizable()
                             .frame(
                                 width: max(zoomState.displayedImageSize.width, 1),
@@ -217,6 +222,7 @@ struct ImageViewerView: View {
             format: appState.currentImageFormatText,
             positionText: appState.currentImagePositionText,
             zoomText: zoomState.statusText,
+            animationState: animatedStatusBarState,
             isFullScreen: isFullScreen
         )
         .onHover { hovering in
@@ -296,6 +302,41 @@ struct ImageViewerView: View {
 
     private var currentInspectorWidth: CGFloat {
         showsInspector ? inspectorWidth : 0
+    }
+
+    private var displayedImage: NSImage? {
+        animatedPlayback.currentFrameImage ?? appState.currentImage
+    }
+
+    private var backgroundImage: NSImage? {
+        appState.currentImage ?? displayedImage
+    }
+
+    private var animatedStatusBarState: StatusBarAnimationState? {
+        guard animatedPlayback.isAnimated else { return nil }
+
+        return StatusBarAnimationState(
+            isPlaying: animatedPlayback.isPlaying,
+            frameText: animatedPlayback.frameStatusText,
+            playbackRateText: animatedPlayback.playbackRateText,
+            playbackRates: animatedPlayback.availablePlaybackRates,
+            onTogglePlayback: {
+                registerUserActivity()
+                animatedPlayback.togglePlayback()
+            },
+            onStepBackward: {
+                registerUserActivity()
+                animatedPlayback.stepBackward()
+            },
+            onStepForward: {
+                registerUserActivity()
+                animatedPlayback.stepForward()
+            },
+            onSelectPlaybackRate: { rate in
+                registerUserActivity()
+                animatedPlayback.setPlaybackRate(rate)
+            }
+        )
     }
 
     private func toggleFullScreen() {

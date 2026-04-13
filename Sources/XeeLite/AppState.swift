@@ -11,6 +11,7 @@ final class AppState: ObservableObject {
     @Published private(set) var currentImagePixelSize: CGSize?
     @Published private(set) var currentImageFileSize: Int64?
     @Published private(set) var currentMetadata = ImageMetadata(sections: [])
+    @Published private(set) var currentAnimatedImage: AnimatedImage?
 
     private let supportedExtensions = Set([
         "avif", "bmp", "gif", "heic", "jpeg", "jpg", "png", "tif", "tiff", "webp"
@@ -138,42 +139,49 @@ final class AppState: ObservableObject {
             currentImagePixelSize = nil
             currentImageFileSize = nil
             currentMetadata = ImageMetadata(sections: [])
+            currentAnimatedImage = nil
             return
         }
 
         let url = imageURLs[currentIndex]
+        let animatedImage = AnimatedImageLoader.load(from: url)
 
-        guard let image = NSImage(contentsOf: url) else {
+        guard let image = animatedImage?.posterImage ?? NSImage(contentsOf: url) else {
             currentImage = nil
             currentImageURL = url
             currentImagePixelSize = nil
             currentImageFileSize = fileSize(for: url)
             currentMetadata = ImageMetadataLoader.load(from: url)
+            currentAnimatedImage = animatedImage
             return
         }
 
         currentImage = image
         currentImageURL = url
-        currentImagePixelSize = pixelSize(for: image)
+        currentImagePixelSize = animatedImage?.pixelSize ?? pixelSize(for: image)
         currentImageFileSize = fileSize(for: url)
         currentMetadata = ImageMetadataLoader.load(from: url)
+        currentAnimatedImage = animatedImage
     }
 
     private func setSingleImage(url: URL, error: Error? = nil) {
         imageURLs = [url]
         currentIndex = 0
         currentImageURL = url
+        let animatedImage = AnimatedImageLoader.load(from: url)
 
-        if let image = NSImage(contentsOf: url) {
+        if let image = animatedImage?.posterImage ?? NSImage(contentsOf: url) {
             currentImage = image
-            currentImagePixelSize = pixelSize(for: image)
+            currentImagePixelSize = animatedImage?.pixelSize ?? pixelSize(for: image)
             currentImageFileSize = fileSize(for: url)
             currentMetadata = ImageMetadataLoader.load(from: url)
+            currentAnimatedImage = animatedImage
         } else {
             currentImage = nil
             currentImagePixelSize = nil
             currentImageFileSize = fileSize(for: url)
             currentMetadata = ImageMetadataLoader.load(from: url)
+            currentAnimatedImage = animatedImage
         }
     }
 

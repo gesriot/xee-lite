@@ -7,6 +7,7 @@ struct StatusBarView: View {
     let format: String?
     let positionText: String?
     let zoomText: String
+    let animationState: StatusBarAnimationState?
     let isFullScreen: Bool
 
     private static let fileSizeFormatter: ByteCountFormatter = {
@@ -20,6 +21,44 @@ struct StatusBarView: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            if let animationState {
+                HStack(spacing: 4) {
+                    Button(action: animationState.onStepBackward) {
+                        Image(systemName: "backward.frame.fill")
+                    }
+                    .help("Previous Frame")
+
+                    Button(action: animationState.onTogglePlayback) {
+                        Image(systemName: animationState.isPlaying ? "pause.fill" : "play.fill")
+                    }
+                    .help(animationState.isPlaying ? "Pause" : "Play")
+
+                    Button(action: animationState.onStepForward) {
+                        Image(systemName: "forward.frame.fill")
+                    }
+                    .help("Next Frame")
+
+                    Menu(animationState.playbackRateText) {
+                        ForEach(animationState.playbackRates, id: \.self) { rate in
+                            Button(rateLabel(for: rate)) {
+                                animationState.onSelectPlaybackRate(rate)
+                            }
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+
+                    if let frameText = animationState.frameText {
+                        Text(frameText)
+                            .monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.74))
+                    }
+                }
+                .buttonStyle(.plain)
+
+                separator
+            }
+
             if let fileName, !fileName.isEmpty {
                 Text(fileName)
                     .lineLimit(1)
@@ -79,4 +118,24 @@ struct StatusBarView: View {
         Text("•")
             .foregroundStyle(.white.opacity(0.34))
     }
+
+    private func rateLabel(for rate: Double) -> String {
+        let rounded = rate.rounded()
+        if abs(rate - rounded) < 0.001 {
+            return "\(Int(rounded))x"
+        }
+
+        return "\(rate.formatted(.number.precision(.fractionLength(1))))x"
+    }
+}
+
+struct StatusBarAnimationState {
+    let isPlaying: Bool
+    let frameText: String?
+    let playbackRateText: String
+    let playbackRates: [Double]
+    let onTogglePlayback: () -> Void
+    let onStepBackward: () -> Void
+    let onStepForward: () -> Void
+    let onSelectPlaybackRate: (Double) -> Void
 }
