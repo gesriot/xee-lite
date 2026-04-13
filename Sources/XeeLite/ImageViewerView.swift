@@ -9,6 +9,7 @@ struct ImageViewerView: View {
     @StateObject private var animatedPlayback = AnimatedImagePlaybackState()
     @State private var window: NSWindow?
     @State private var activeSheet: ViewerSheet?
+    @State private var deleteConfirmationTarget: DeleteConfirmationTarget?
     @State private var isFullScreen = false
     @State private var isChromeVisible = true
     @State private var autoHideWorkItem: DispatchWorkItem?
@@ -17,9 +18,17 @@ struct ImageViewerView: View {
     private let inspectorWidth: CGFloat = 300
 
     var body: some View {
+        alertingContent
+    }
+
+    private var baseStyledContent: some View {
         rootContent
         .background(Color.black.opacity(0.92))
         .animation(.easeOut(duration: 0.16), value: isChromeVisible)
+    }
+
+    private var lifecycleObservedContent: some View {
+        baseStyledContent
         .onAppear {
             appState.loadInitialImage()
             zoomState.updateImagePixelSize(appState.currentImagePixelSize)
@@ -38,6 +47,13 @@ struct ImageViewerView: View {
         .onChange(of: appState.manageDestinationsRequestID) { _, _ in
             activeSheet = .manageDestinations
         }
+        .onChange(of: appState.deleteRequestID) { _, _ in
+            presentDeleteConfirmationIfPossible()
+        }
+    }
+
+    private var windowObservedContent: some View {
+        lifecycleObservedContent
         .onChange(of: showsStatusBar) { _, _ in
             guard let window else { return }
             updateZoomContext(for: window)
@@ -70,6 +86,10 @@ struct ImageViewerView: View {
             guard let resolvedWindow = matchingWindow(from: notification.object) else { return }
             updateZoomContext(for: resolvedWindow)
         }
+    }
+
+    private var interactionWrappedContent: some View {
+        windowObservedContent
         .background {
             KeyboardHandlerView(
                 onPrevious: appState.showPreviousImage,
@@ -77,6 +97,7 @@ struct ImageViewerView: View {
                 onFirst: appState.showFirstImage,
                 onLast: appState.showLastImage,
                 onRename: appState.requestRenameCurrentImage,
+                onDelete: appState.requestDeleteCurrentImage,
                 onMoveToDestinationSlot: appState.moveCurrentImage(toDestinationSlot:),
                 onCopyToDestinationSlot: appState.copyCurrentImage(toDestinationSlot:),
                 onJumpBackward: {
@@ -101,7 +122,32 @@ struct ImageViewerView: View {
                 updateZoomContext(for: nsWindow)
             }
         }
+    }
+
+    private var presentedContent: some View {
+        interactionWrappedContent
         .sheet(item: $activeSheet, content: sheetView)
+        .confirmationDialog(
+            "Move to Trash?",
+            isPresented: isDeleteConfirmationPresented,
+            titleVisibility: .visible,
+            presenting: deleteConfirmationTarget
+        ) { _ in
+            Button("Move to Trash", role: .destructive) {
+                appState.trashCurrentImage()
+                deleteConfirmationTarget = nil
+            }
+
+            Button("Cancel", role: .cancel) {
+                deleteConfirmationTarget = nil
+            }
+        } message: { target in
+            Text("Move \"\(target.url.lastPathComponent)\" to the Trash?")
+        }
+    }
+
+    private var alertingContent: some View {
+        presentedContent
         .alert(item: activeAlertBinding) { alert in
             Alert(
                 title: Text(alert.title),
@@ -412,10 +458,26 @@ struct ImageViewerView: View {
         activeSheet = .rename(currentImageURL)
     }
 
+    private func presentDeleteConfirmationIfPossible() {
+        guard let currentImageURL = appState.currentImageURL else { return }
+        deleteConfirmationTarget = DeleteConfirmationTarget(url: currentImageURL)
+    }
+
     private var activeAlertBinding: Binding<FileActionAlertState?> {
         Binding(
             get: { appState.activeAlert },
             set: { appState.activeAlert = $0 }
+        )
+    }
+
+    private var isDeleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { deleteConfirmationTarget != nil },
+            set: { isPresented in
+                if !isPresented {
+                    deleteConfirmationTarget = nil
+                }
+            }
         )
     }
 
@@ -453,6 +515,7 @@ private struct KeyboardHandlerView: NSViewRepresentable {
     let onFirst: () -> Void
     let onLast: () -> Void
     let onRename: () -> Void
+    let onDelete: () -> Void
     let onMoveToDestinationSlot: (Int) -> Void
     let onCopyToDestinationSlot: (Int) -> Void
     let onJumpBackward: () -> Void
@@ -465,6 +528,7 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         view.onFirst = onFirst
         view.onLast = onLast
         view.onRename = onRename
+        view.onDelete = onDelete
         view.onMoveToDestinationSlot = onMoveToDestinationSlot
         view.onCopyToDestinationSlot = onCopyToDestinationSlot
         view.onJumpBackward = onJumpBackward
@@ -478,6 +542,7 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         nsView.onFirst = onFirst
         nsView.onLast = onLast
         nsView.onRename = onRename
+        nsView.onDelete = onDelete
         nsView.onMoveToDestinationSlot = onMoveToDestinationSlot
         nsView.onCopyToDestinationSlot = onCopyToDestinationSlot
         nsView.onJumpBackward = onJumpBackward
@@ -491,6 +556,7 @@ private final class KeyAwareView: NSView {
     var onFirst: (() -> Void)?
     var onLast: (() -> Void)?
     var onRename: (() -> Void)?
+    var onDelete: (() -> Void)?
     var onMoveToDestinationSlot: ((Int) -> Void)?
     var onCopyToDestinationSlot: ((Int) -> Void)?
     var onJumpBackward: (() -> Void)?
@@ -547,6 +613,7 @@ private final class KeyAwareView: NSView {
         case 49:
             if modifiers.isEmpty { onNext?(); return nil }
         case 51:
+            if modifiers == [.command] { onDelete?(); return nil }
             if modifiers.isEmpty { onPrevious?(); return nil }
         case 115:
             if modifiers.isEmpty { onFirst?(); return nil }
@@ -589,6 +656,11 @@ private enum ViewerSheet: Identifiable {
             return "manage-destinations"
         }
     }
+}
+
+private struct DeleteConfirmationTarget: Identifiable {
+    let id = UUID()
+    let url: URL
 }
 
 private struct WindowAccessor: NSViewRepresentable {

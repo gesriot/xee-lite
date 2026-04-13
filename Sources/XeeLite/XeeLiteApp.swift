@@ -28,6 +28,12 @@ struct XeeLiteApp: App {
                 }
                 .keyboardShortcut("r", modifiers: [.command])
                 .disabled(!appState.canRenameCurrentImage)
+
+                Button("Move to Trash") {
+                    appState.requestDeleteCurrentImage()
+                }
+                .keyboardShortcut(.delete, modifiers: [.command])
+                .disabled(!appState.canDeleteCurrentImage)
             }
 
             CommandMenu("Transfer") {

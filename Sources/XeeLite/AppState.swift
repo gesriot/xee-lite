@@ -16,6 +16,7 @@ final class AppState: ObservableObject {
     @Published private(set) var currentAnimatedImage: AnimatedImage?
     @Published private(set) var renameRequestID: UInt64 = 0
     @Published private(set) var manageDestinationsRequestID: UInt64 = 0
+    @Published private(set) var deleteRequestID: UInt64 = 0
     @Published private(set) var fileActionDestinations: [FileActionDestination]
     @Published private(set) var fileActionMessage: String?
     @Published var activeAlert: FileActionAlertState?
@@ -129,6 +130,10 @@ final class AppState: ObservableObject {
         currentImageURL != nil
     }
 
+    var canDeleteCurrentImage: Bool {
+        currentImageURL != nil
+    }
+
     var currentImagePositionText: String? {
         guard imageURLs.indices.contains(currentIndex) else { return nil }
         return "\(currentIndex + 1)/\(imageURLs.count)"
@@ -146,6 +151,11 @@ final class AppState: ObservableObject {
 
     func requestManageDestinations() {
         manageDestinationsRequestID &+= 1
+    }
+
+    func requestDeleteCurrentImage() {
+        guard canDeleteCurrentImage else { return }
+        deleteRequestID &+= 1
     }
 
     func setFileActionDestination(_ folderURL: URL, forSlot slotNumber: Int) {
@@ -167,6 +177,18 @@ final class AppState: ObservableObject {
 
     func moveCurrentImage(toDestinationSlot slotNumber: Int) {
         performCurrentImageTransfer(.move, toDestinationSlot: slotNumber)
+    }
+
+    func trashCurrentImage() {
+        guard let currentImageURL else {
+            presentAlert(
+                title: "Move to Trash Failed",
+                message: FileTransferError.noImage.localizedDescription
+            )
+            return
+        }
+
+        trashImage(at: currentImageURL)
     }
 
     func renameValidationMessage(forBaseName baseName: String) -> String? {
@@ -339,6 +361,26 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func trashImage(at imageURL: URL) {
+        let standardizedURL = imageURL.standardizedFileURL
+
+        do {
+            var resultingItemURL: NSURL?
+            try FileManager.default.trashItem(
+                at: standardizedURL,
+                resultingItemURL: &resultingItemURL
+            )
+
+            updateAfterTrashingCurrentImage(at: standardizedURL)
+            presentFileActionMessage("Moved to Trash")
+        } catch {
+            presentAlert(
+                title: "Move to Trash Failed",
+                message: error.localizedDescription
+            )
+        }
+    }
+
     private func transferTargetURL(for sourceURL: URL, destinationFolderURL: URL) throws -> URL {
         let resourceValues = try destinationFolderURL.resourceValues(forKeys: [.isDirectoryKey])
         guard resourceValues.isDirectory == true else {
@@ -368,6 +410,32 @@ final class AppState: ObservableObject {
         imageURLs = remainingImageURLs
         currentIndex = min(currentIndex, remainingImageURLs.count - 1)
         updateDisplayedImage()
+    }
+
+    private func updateAfterTrashingCurrentImage(at sourceURL: URL) {
+        let standardizedSourceURL = sourceURL.standardizedFileURL
+        let deletedIndex = imageURLs.firstIndex(where: { $0.standardizedFileURL == standardizedSourceURL }) ?? currentIndex
+        let remainingImageURLs = imageURLs.filter { $0.standardizedFileURL != standardizedSourceURL }
+
+        guard !remainingImageURLs.isEmpty else {
+            clearCurrentImageState()
+            return
+        }
+
+        imageURLs = remainingImageURLs
+        currentIndex = min(deletedIndex, remainingImageURLs.count - 1)
+        updateDisplayedImage()
+    }
+
+    private func clearCurrentImageState() {
+        imageURLs = []
+        currentIndex = 0
+        currentImage = nil
+        currentImageURL = nil
+        currentImagePixelSize = nil
+        currentImageFileSize = nil
+        currentMetadata = ImageMetadata(sections: [])
+        currentAnimatedImage = nil
     }
 
     private func presentAlert(title: String, message: String) {
