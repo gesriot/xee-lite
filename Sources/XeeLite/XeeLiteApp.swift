@@ -5,6 +5,7 @@ struct XeeLiteApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var zoomState = ZoomState()
     @AppStorage("showsStatusBar") private var showsStatusBar = true
+    @AppStorage("showsInspector") private var showsInspector = false
 
     var body: some Scene {
         WindowGroup {
@@ -33,6 +34,11 @@ struct XeeLiteApp: App {
 
                 Toggle("Show Status Bar", isOn: $showsStatusBar)
                     .keyboardShortcut("/", modifiers: [.command])
+
+                Divider()
+
+                Toggle("Show Inspector", isOn: $showsInspector)
+                    .keyboardShortcut("i", modifiers: [.command])
 
                 Divider()
 

@@ -5,18 +5,20 @@ struct ImageViewerView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var zoomState: ZoomState
     @AppStorage("showsStatusBar") private var showsStatusBar = true
+    @AppStorage("showsInspector") private var showsInspector = false
     @State private var window: NSWindow?
     @State private var isFullScreen = false
     @State private var isChromeVisible = true
     @State private var autoHideWorkItem: DispatchWorkItem?
     private let fullScreenChromeInset: CGFloat = 10
     private let fullScreenAutoHideDelay: TimeInterval = 1.8
+    private let inspectorWidth: CGFloat = 300
 
     var body: some View {
         Group {
             if isFullScreen {
                 ZStack(alignment: .bottom) {
-                    viewerContent
+                    contentLayout
 
                     if showsStatusBar, isChromeVisible {
                         statusBar
@@ -27,7 +29,7 @@ struct ImageViewerView: View {
                 }
             } else {
                 VStack(spacing: 0) {
-                    viewerContent
+                    contentLayout
 
                     if showsStatusBar {
                         statusBar
@@ -48,6 +50,14 @@ struct ImageViewerView: View {
             zoomState.updateImagePixelSize(newSize)
         }
         .onChange(of: showsStatusBar) { _, _ in
+            guard let window else { return }
+            updateZoomContext(for: window)
+
+            if zoomState.mode == .fitOnScreen, !window.styleMask.contains(.fullScreen) {
+                resizeWindowForFitOnScreen(window)
+            }
+        }
+        .onChange(of: showsInspector) { _, _ in
             guard let window else { return }
             updateZoomContext(for: window)
 
@@ -97,6 +107,25 @@ struct ImageViewerView: View {
 
                 isFullScreen = nsWindow.styleMask.contains(.fullScreen)
                 updateZoomContext(for: nsWindow)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var contentLayout: some View {
+        HStack(spacing: 0) {
+            viewerContent
+
+            if showsInspector {
+                MetadataInspectorView(
+                    metadata: appState.currentMetadata,
+                    isFullScreen: isFullScreen
+                )
+                .onHover { hovering in
+                    if hovering {
+                        registerUserActivity()
+                    }
+                }
             }
         }
     }
@@ -217,10 +246,11 @@ struct ImageViewerView: View {
         let screen = window.screen ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? .zero
         let availableContentSize = window.contentRect(forFrameRect: visibleFrame).size
+        let availableViewportWidth = max(0, availableContentSize.width - currentInspectorWidth)
         let fitOnScreenViewportHeight = max(0, availableContentSize.height - currentWindowedStatusBarHeight)
 
         zoomState.updateScreen(
-            visibleFrameSize: CGSize(width: availableContentSize.width, height: fitOnScreenViewportHeight),
+            visibleFrameSize: CGSize(width: availableViewportWidth, height: fitOnScreenViewportHeight),
             backingScaleFactor: window.backingScaleFactor
         )
     }
@@ -237,7 +267,7 @@ struct ImageViewerView: View {
         guard targetViewportSize != .zero else { return }
 
         let contentSize = CGSize(
-            width: min(targetViewportSize.width, maxContentSize.width),
+            width: min(targetViewportSize.width + currentInspectorWidth, maxContentSize.width),
             height: min(targetViewportSize.height + currentWindowedStatusBarHeight, maxContentSize.height)
         )
 
@@ -262,6 +292,10 @@ struct ImageViewerView: View {
 
     private var currentWindowedStatusBarHeight: CGFloat {
         showsStatusBar && !isFullScreen ? 26 : 0
+    }
+
+    private var currentInspectorWidth: CGFloat {
+        showsInspector ? inspectorWidth : 0
     }
 
     private func toggleFullScreen() {

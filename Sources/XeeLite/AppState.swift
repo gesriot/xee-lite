@@ -10,6 +10,7 @@ final class AppState: ObservableObject {
     @Published private(set) var currentImageURL: URL?
     @Published private(set) var currentImagePixelSize: CGSize?
     @Published private(set) var currentImageFileSize: Int64?
+    @Published private(set) var currentMetadata = ImageMetadata(sections: [])
 
     private let supportedExtensions = Set([
         "avif", "bmp", "gif", "heic", "jpeg", "jpg", "png", "tif", "tiff", "webp"
@@ -136,6 +137,7 @@ final class AppState: ObservableObject {
             currentImageURL = nil
             currentImagePixelSize = nil
             currentImageFileSize = nil
+            currentMetadata = ImageMetadata(sections: [])
             return
         }
 
@@ -146,6 +148,7 @@ final class AppState: ObservableObject {
             currentImageURL = url
             currentImagePixelSize = nil
             currentImageFileSize = fileSize(for: url)
+            currentMetadata = ImageMetadataLoader.load(from: url)
             return
         }
 
@@ -153,6 +156,7 @@ final class AppState: ObservableObject {
         currentImageURL = url
         currentImagePixelSize = pixelSize(for: image)
         currentImageFileSize = fileSize(for: url)
+        currentMetadata = ImageMetadataLoader.load(from: url)
     }
 
     private func setSingleImage(url: URL, error: Error? = nil) {
@@ -164,10 +168,12 @@ final class AppState: ObservableObject {
             currentImage = image
             currentImagePixelSize = pixelSize(for: image)
             currentImageFileSize = fileSize(for: url)
+            currentMetadata = ImageMetadataLoader.load(from: url)
         } else {
             currentImage = nil
             currentImagePixelSize = nil
             currentImageFileSize = fileSize(for: url)
+            currentMetadata = ImageMetadataLoader.load(from: url)
         }
     }
 
