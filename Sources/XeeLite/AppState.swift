@@ -9,6 +9,7 @@ final class AppState: ObservableObject {
     @Published private(set) var currentImage: NSImage?
     @Published private(set) var currentImageURL: URL?
     @Published private(set) var currentImagePixelSize: CGSize?
+    @Published private(set) var currentImageFileSize: Int64?
 
     private let supportedExtensions = Set([
         "avif", "bmp", "gif", "heic", "jpeg", "jpg", "png", "tif", "tiff", "webp"
@@ -109,11 +110,32 @@ final class AppState: ObservableObject {
         currentIndex + 1 < imageURLs.count
     }
 
+    var currentImagePositionText: String? {
+        guard imageURLs.indices.contains(currentIndex) else { return nil }
+        return "\(currentIndex + 1)/\(imageURLs.count)"
+    }
+
+    var currentImageFormatText: String? {
+        guard let pathExtension = currentImageURL?.pathExtension.lowercased(), !pathExtension.isEmpty else { return nil }
+
+        switch pathExtension {
+        case "jpg", "jpeg":
+            return "JPEG"
+        case "tif", "tiff":
+            return "TIFF"
+        case "webp":
+            return "WebP"
+        default:
+            return pathExtension.uppercased()
+        }
+    }
+
     private func updateDisplayedImage() {
         guard imageURLs.indices.contains(currentIndex) else {
             currentImage = nil
             currentImageURL = nil
             currentImagePixelSize = nil
+            currentImageFileSize = nil
             return
         }
 
@@ -123,12 +145,14 @@ final class AppState: ObservableObject {
             currentImage = nil
             currentImageURL = url
             currentImagePixelSize = nil
+            currentImageFileSize = fileSize(for: url)
             return
         }
 
         currentImage = image
         currentImageURL = url
         currentImagePixelSize = pixelSize(for: image)
+        currentImageFileSize = fileSize(for: url)
     }
 
     private func setSingleImage(url: URL, error: Error? = nil) {
@@ -139,9 +163,11 @@ final class AppState: ObservableObject {
         if let image = NSImage(contentsOf: url) {
             currentImage = image
             currentImagePixelSize = pixelSize(for: image)
+            currentImageFileSize = fileSize(for: url)
         } else {
             currentImage = nil
             currentImagePixelSize = nil
+            currentImageFileSize = fileSize(for: url)
         }
     }
 
@@ -157,5 +183,16 @@ final class AppState: ObservableObject {
         let size = image.size
         guard size.width > 0, size.height > 0 else { return nil }
         return size
+    }
+
+    private func fileSize(for url: URL) -> Int64? {
+        guard
+            let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+            let size = attributes[.size] as? NSNumber
+        else {
+            return nil
+        }
+
+        return size.int64Value
     }
 }

@@ -4,6 +4,7 @@ import SwiftUI
 struct XeeLiteApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var zoomState = ZoomState()
+    @AppStorage("showsStatusBar") private var showsStatusBar = true
 
     var body: some Scene {
         WindowGroup {
@@ -27,6 +28,11 @@ struct XeeLiteApp: App {
                     NSApp.keyWindow?.toggleFullScreen(nil)
                 }
                 .keyboardShortcut("f", modifiers: [.command])
+
+                Divider()
+
+                Toggle("Show Status Bar", isOn: $showsStatusBar)
+                    .keyboardShortcut("/", modifiers: [.command])
 
                 Divider()
 

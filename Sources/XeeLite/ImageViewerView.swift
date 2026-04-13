@@ -4,11 +4,11 @@ import SwiftUI
 struct ImageViewerView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var zoomState: ZoomState
+    @AppStorage("showsStatusBar") private var showsStatusBar = true
     @State private var window: NSWindow?
     @State private var isFullScreen = false
     @State private var isChromeVisible = true
     @State private var autoHideWorkItem: DispatchWorkItem?
-    private let statusBarHeight: CGFloat = 26
     private let fullScreenChromeInset: CGFloat = 10
     private let fullScreenAutoHideDelay: TimeInterval = 1.8
 
@@ -18,7 +18,7 @@ struct ImageViewerView: View {
                 ZStack(alignment: .bottom) {
                     viewerContent
 
-                    if isChromeVisible {
+                    if showsStatusBar, isChromeVisible {
                         statusBar
                             .padding(.horizontal, fullScreenChromeInset)
                             .padding(.bottom, fullScreenChromeInset)
@@ -28,7 +28,10 @@ struct ImageViewerView: View {
             } else {
                 VStack(spacing: 0) {
                     viewerContent
-                    statusBar
+
+                    if showsStatusBar {
+                        statusBar
+                    }
                 }
             }
         }
@@ -43,6 +46,14 @@ struct ImageViewerView: View {
         }
         .onChange(of: appState.currentImagePixelSize) { _, newSize in
             zoomState.updateImagePixelSize(newSize)
+        }
+        .onChange(of: showsStatusBar) { _, _ in
+            guard let window else { return }
+            updateZoomContext(for: window)
+
+            if zoomState.mode == .fitOnScreen, !window.styleMask.contains(.fullScreen) {
+                resizeWindowForFitOnScreen(window)
+            }
         }
         .onChange(of: zoomState.fitOnScreenRequestID) { _, _ in
             guard let window else { return }
@@ -170,25 +181,15 @@ struct ImageViewerView: View {
     }
 
     private var statusBar: some View {
-        HStack {
-            Spacer(minLength: 0)
-
-            Text(zoomState.statusText)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.84))
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12)
-        .frame(height: statusBarHeight)
-        .background(isFullScreen ? Color.black.opacity(0.58) : Color.black.opacity(0.84))
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(.white.opacity(isFullScreen ? 0.10 : 0.08))
-                .frame(height: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: isFullScreen ? 8 : 0, style: .continuous))
+        StatusBarView(
+            fileName: appState.currentImageURL?.lastPathComponent,
+            pixelSize: appState.currentImagePixelSize,
+            fileSize: appState.currentImageFileSize,
+            format: appState.currentImageFormatText,
+            positionText: appState.currentImagePositionText,
+            zoomText: zoomState.statusText,
+            isFullScreen: isFullScreen
+        )
         .onHover { hovering in
             if hovering {
                 registerUserActivity()
@@ -216,7 +217,7 @@ struct ImageViewerView: View {
         let screen = window.screen ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? .zero
         let availableContentSize = window.contentRect(forFrameRect: visibleFrame).size
-        let fitOnScreenViewportHeight = max(0, availableContentSize.height - statusBarHeight)
+        let fitOnScreenViewportHeight = max(0, availableContentSize.height - currentWindowedStatusBarHeight)
 
         zoomState.updateScreen(
             visibleFrameSize: CGSize(width: availableContentSize.width, height: fitOnScreenViewportHeight),
@@ -225,6 +226,7 @@ struct ImageViewerView: View {
     }
 
     private func resizeWindowForFitOnScreen(_ window: NSWindow) {
+        guard !window.styleMask.contains(.fullScreen) else { return }
         guard let screen = window.screen ?? NSScreen.main else { return }
 
         let visibleFrame = screen.visibleFrame
@@ -236,7 +238,7 @@ struct ImageViewerView: View {
 
         let contentSize = CGSize(
             width: min(targetViewportSize.width, maxContentSize.width),
-            height: min(targetViewportSize.height + statusBarHeight, maxContentSize.height)
+            height: min(targetViewportSize.height + currentWindowedStatusBarHeight, maxContentSize.height)
         )
 
         let targetFrame = centeredFrame(
@@ -256,6 +258,10 @@ struct ImageViewerView: View {
         )
 
         return NSRect(origin: origin, size: frameSize)
+    }
+
+    private var currentWindowedStatusBarHeight: CGFloat {
+        showsStatusBar && !isFullScreen ? 26 : 0
     }
 
     private func toggleFullScreen() {
