@@ -13,10 +13,6 @@ final class AppState: ObservableObject {
     @Published private(set) var currentMetadata = ImageMetadata(sections: [])
     @Published private(set) var currentAnimatedImage: AnimatedImage?
 
-    private let supportedExtensions = Set([
-        "avif", "bmp", "gif", "heic", "jpeg", "jpg", "png", "tif", "tiff", "webp"
-    ])
-
     func openImagePicker() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
@@ -50,7 +46,7 @@ final class AppState: ObservableObject {
             )
 
             let images = folderContents
-                .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
+                .filter { SupportedImageFormats.folderExtensions.contains($0.pathExtension.lowercased()) }
                 .sorted {
                     $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
                 }
@@ -119,17 +115,7 @@ final class AppState: ObservableObject {
 
     var currentImageFormatText: String? {
         guard let pathExtension = currentImageURL?.pathExtension.lowercased(), !pathExtension.isEmpty else { return nil }
-
-        switch pathExtension {
-        case "jpg", "jpeg":
-            return "JPEG"
-        case "tif", "tiff":
-            return "TIFF"
-        case "webp":
-            return "WebP"
-        default:
-            return pathExtension.uppercased()
-        }
+        return SupportedImageFormats.displayName(for: pathExtension)
     }
 
     private func updateDisplayedImage() {

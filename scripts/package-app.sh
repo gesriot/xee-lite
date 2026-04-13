@@ -24,6 +24,7 @@ RESOURCES_DIR="$CONTENTS_DIR/Resources"
 ICONSET_DIR="$ROOT_DIR/.build/$APP_NAME.iconset"
 ICON_PATH="$RESOURCES_DIR/$APP_NAME.icns"
 PROJECT_ICON_SOURCE="$ROOT_DIR/Resources/icon.png"
+INFO_PLIST_SOURCE="$ROOT_DIR/Resources/Info.plist"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -47,35 +48,6 @@ if [[ -f "$PROJECT_ICON_SOURCE" ]]; then
   iconutil -c icns "$ICONSET_DIR" -o "$ICON_PATH"
 fi
 
-cat > "$CONTENTS_DIR/Info.plist" <<'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleExecutable</key>
-    <string>XeeLite</string>
-    <key>CFBundleIconFile</key>
-    <string>XeeLite.icns</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.codex.xeelite</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>XeeLite</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-</dict>
-</plist>
-EOF
+cp "$INFO_PLIST_SOURCE" "$CONTENTS_DIR/Info.plist"
 
 echo "Created $APP_DIR"
