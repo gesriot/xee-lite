@@ -104,32 +104,32 @@ The finished app is written to `dist/XeeLite.app` and the disk image to `dist/Xe
 
 ## Planned
 
-### 4.4 – Finder color labels
-Set a color label (red, orange, yellow, etc.) on the current file, same as in Finder. Keyboard shortcut per color.
+### File management
+- [ ] Finder color labels – set red, orange, yellow, etc. on the current file
 
-### 5 – Slideshow and advanced viewing
-- **Slideshow** – auto-advance with configurable interval, transitions (fade/slide), full screen mode
-- **Crop** – interactive rectangular selection, fixed aspect ratios, save cropped result
-- **Color correction** – non-destructive brightness/contrast/gamma/saturation sliders via Core Image
+### Slideshow and advanced viewing
+- [ ] Slideshow – auto-advance with configurable interval, transitions, full screen mode
+- [ ] Crop – interactive rectangular selection, fixed aspect ratios, save cropped result
+- [ ] Color correction – non-destructive brightness/contrast/gamma/saturation sliders via Core Image
 
-### 6 – Thumbnails and browsing
-- **Thumbnail strip** – horizontal filmstrip of the current folder, lazily loaded
-- **Folder browser** – separate grid view of all images in the folder, sortable by name/date/size
-- **Tabs** – multiple folders/images in one window using native macOS tabs
+### Thumbnails and browsing
+- [ ] Thumbnail strip – horizontal filmstrip of the current folder, lazily loaded
+- [ ] Folder browser – separate grid view of all images in the folder, sortable by name/date/size
+- [ ] Tabs – multiple folders/images in one window using native macOS tabs
 
-### 7 – Export and system integration
-- **Export / Convert** – Save As with format selection (JPEG, PNG, TIFF, HEIC, WebP), quality control, optional resize
-- **Print** – `⌘P` with fit/fill options and print preview
-- **Clipboard** – `⌘C` to copy the current image, `⌘V` to open from clipboard; drag & drop into the window
-- **Set as Desktop Picture** – one menu item, current screen
-- **File system watcher** – auto-refresh the folder list when files are added or removed
+### Export and system integration
+- [ ] Export / Convert – Save As with format selection (JPEG, PNG, TIFF, HEIC, WebP), quality control, optional resize
+- [ ] Print – `⌘P` with fit/fill options and print preview
+- [ ] Clipboard – `⌘C` to copy the current image, `⌘V` to open from clipboard; drag & drop into the window
+- [ ] Set as Desktop Picture – one menu item, current screen
+- [ ] File system watcher – auto-refresh the folder list when files are added or removed
 
-### 8 – Themes and preferences
-- **Background themes** – black, dark, light, or automatic (follows system appearance)
-- **Preferences window** (`⌘,`) – zoom behavior on open, slideshow interval, keyboard shortcut customization
+### Themes and preferences
+- [ ] Background themes – black, dark, light, or automatic (follows system appearance)
+- [ ] Preferences window (`⌘,`) – zoom behavior on open, slideshow interval, keyboard shortcut customization
 
-### 9 – Archive support
-Browse images inside ZIP, RAR, 7z, and TAR archives without extracting them. Password-protected archives supported.
+### Archive support
+- [ ] Browse images inside ZIP, RAR, 7z, and TAR archives without extracting them; password-protected archives supported
 
 ---
 
