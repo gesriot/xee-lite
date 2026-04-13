@@ -12,6 +12,7 @@ final class AppState: ObservableObject {
     @Published private(set) var currentImageFileSize: Int64?
     @Published private(set) var currentMetadata = ImageMetadata(sections: [])
     @Published private(set) var currentAnimatedImage: AnimatedImage?
+    @Published private(set) var renameRequestID: UInt64 = 0
 
     func openImagePicker() {
         let panel = NSOpenPanel()
@@ -108,6 +109,10 @@ final class AppState: ObservableObject {
         currentIndex + 1 < imageURLs.count
     }
 
+    var canRenameCurrentImage: Bool {
+        currentImageURL != nil
+    }
+
     var currentImagePositionText: String? {
         guard imageURLs.indices.contains(currentIndex) else { return nil }
         return "\(currentIndex + 1)/\(imageURLs.count)"
@@ -116,6 +121,65 @@ final class AppState: ObservableObject {
     var currentImageFormatText: String? {
         guard let pathExtension = currentImageURL?.pathExtension.lowercased(), !pathExtension.isEmpty else { return nil }
         return SupportedImageFormats.displayName(for: pathExtension)
+    }
+
+    func requestRenameCurrentImage() {
+        guard canRenameCurrentImage else { return }
+        renameRequestID &+= 1
+    }
+
+    func renameValidationMessage(forBaseName baseName: String) -> String? {
+        guard let currentImageURL else {
+            return RenameImageError.noImage.localizedDescription
+        }
+
+        return renameValidationMessage(forBaseName: baseName, imageURL: currentImageURL)
+    }
+
+    func renameValidationMessage(forBaseName baseName: String, imageURL: URL) -> String? {
+        do {
+            _ = try renamedImageURL(forBaseName: baseName, from: imageURL)
+            return nil
+        } catch let error as RenameImageError {
+            return error.localizedDescription
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func renameCurrentImage(toBaseName baseName: String) throws {
+        guard let currentImageURL else {
+            throw RenameImageError.noImage
+        }
+
+        try renameImage(at: currentImageURL, toBaseName: baseName)
+    }
+
+    func renameImage(at imageURL: URL, toBaseName baseName: String) throws {
+        let destinationURL = try renamedImageURL(forBaseName: baseName, from: imageURL)
+        guard destinationURL != imageURL else { return }
+
+        let fileManager = FileManager.default
+
+        do {
+            if isCaseOnlyRename(from: imageURL, to: destinationURL) {
+                let temporaryURL = uniqueTemporaryRenameURL(for: imageURL)
+                try fileManager.moveItem(at: imageURL, to: temporaryURL)
+
+                do {
+                    try fileManager.moveItem(at: temporaryURL, to: destinationURL)
+                } catch {
+                    try? fileManager.moveItem(at: temporaryURL, to: imageURL)
+                    throw error
+                }
+            } else {
+                try fileManager.moveItem(at: imageURL, to: destinationURL)
+            }
+        } catch {
+            throw RenameImageError.moveFailed(error)
+        }
+
+        loadImage(at: destinationURL)
     }
 
     private func updateDisplayedImage() {
@@ -194,5 +258,91 @@ final class AppState: ObservableObject {
         }
 
         return size.int64Value
+    }
+
+    private func renamedImageURL(forBaseName baseName: String, from currentURL: URL) throws -> URL {
+        let trimmedBaseName = baseName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedBaseName.isEmpty else {
+            throw RenameImageError.emptyName
+        }
+
+        guard trimmedBaseName != ".", trimmedBaseName != ".." else {
+            throw RenameImageError.invalidCharacters
+        }
+
+        let invalidCharacters = CharacterSet(charactersIn: "/:")
+        guard trimmedBaseName.rangeOfCharacter(from: invalidCharacters) == nil else {
+            throw RenameImageError.invalidCharacters
+        }
+
+        let pathExtension = currentURL.pathExtension
+        let currentBaseName = currentURL.deletingPathExtension().lastPathComponent
+        guard trimmedBaseName != currentBaseName else {
+            return currentURL
+        }
+
+        let destinationURL = destinationURL(forBaseName: trimmedBaseName, pathExtension: pathExtension, currentURL: currentURL)
+
+        if FileManager.default.fileExists(atPath: destinationURL.path), !isCaseOnlyRename(from: currentURL, to: destinationURL) {
+            throw RenameImageError.duplicateName(destinationURL.lastPathComponent)
+        }
+
+        return destinationURL
+    }
+
+    private func destinationURL(forBaseName baseName: String, pathExtension: String, currentURL: URL) -> URL {
+        let fileName: String
+        if pathExtension.isEmpty {
+            fileName = baseName
+        } else {
+            fileName = "\(baseName).\(pathExtension)"
+        }
+
+        return currentURL.deletingLastPathComponent().appendingPathComponent(fileName)
+    }
+
+    private func isCaseOnlyRename(from sourceURL: URL, to destinationURL: URL) -> Bool {
+        sourceURL.deletingLastPathComponent() == destinationURL.deletingLastPathComponent()
+            && sourceURL.lastPathComponent.caseInsensitiveCompare(destinationURL.lastPathComponent) == .orderedSame
+            && sourceURL.lastPathComponent != destinationURL.lastPathComponent
+    }
+
+    private func uniqueTemporaryRenameURL(for sourceURL: URL) -> URL {
+        let directoryURL = sourceURL.deletingLastPathComponent()
+        let baseName = sourceURL.deletingPathExtension().lastPathComponent
+        let pathExtension = sourceURL.pathExtension
+
+        while true {
+            let candidateBaseName = "\(baseName).rename-\(UUID().uuidString)"
+            let candidateURL = destinationURL(forBaseName: candidateBaseName, pathExtension: pathExtension, currentURL: sourceURL)
+
+            if !FileManager.default.fileExists(atPath: candidateURL.path) {
+                return directoryURL.appendingPathComponent(candidateURL.lastPathComponent)
+            }
+        }
+    }
+}
+
+private enum RenameImageError: LocalizedError {
+    case noImage
+    case emptyName
+    case invalidCharacters
+    case duplicateName(String)
+    case moveFailed(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .noImage:
+            return "No image loaded."
+        case .emptyName:
+            return "Name can't be empty."
+        case .invalidCharacters:
+            return "Name can't contain \"/\" or \":\"."
+        case let .duplicateName(name):
+            return "A file named \"\(name)\" already exists."
+        case let .moveFailed(error):
+            return "Couldn't rename the file: \(error.localizedDescription)"
+        }
     }
 }

@@ -8,6 +8,7 @@ struct ImageViewerView: View {
     @AppStorage("showsInspector") private var showsInspector = false
     @StateObject private var animatedPlayback = AnimatedImagePlaybackState()
     @State private var window: NSWindow?
+    @State private var renameSheetTarget: RenameSheetTarget?
     @State private var isFullScreen = false
     @State private var isChromeVisible = true
     @State private var autoHideWorkItem: DispatchWorkItem?
@@ -52,6 +53,9 @@ struct ImageViewerView: View {
         .onChange(of: appState.currentImagePixelSize) { _, newSize in
             zoomState.updateImagePixelSize(newSize)
         }
+        .onChange(of: appState.renameRequestID) { _, _ in
+            presentRenameSheetIfPossible()
+        }
         .onChange(of: showsStatusBar) { _, _ in
             guard let window else { return }
             updateZoomContext(for: window)
@@ -90,6 +94,7 @@ struct ImageViewerView: View {
                 onNext: appState.showNextImage,
                 onFirst: appState.showFirstImage,
                 onLast: appState.showLastImage,
+                onRename: appState.requestRenameCurrentImage,
                 onJumpBackward: {
                     appState.jumpImages(by: -10)
                 },
@@ -111,6 +116,17 @@ struct ImageViewerView: View {
                 isFullScreen = nsWindow.styleMask.contains(.fullScreen)
                 updateZoomContext(for: nsWindow)
             }
+        }
+        .sheet(item: $renameSheetTarget) { target in
+            RenameImageSheet(
+                imageURL: target.url,
+                validationMessage: { baseName in
+                    appState.renameValidationMessage(forBaseName: baseName, imageURL: target.url)
+                },
+                onRename: { baseName in
+                    try appState.renameImage(at: target.url, toBaseName: baseName)
+                }
+            )
         }
     }
 
@@ -384,6 +400,11 @@ struct ImageViewerView: View {
         autoHideWorkItem?.cancel()
         autoHideWorkItem = nil
     }
+
+    private func presentRenameSheetIfPossible() {
+        guard let currentImageURL = appState.currentImageURL else { return }
+        renameSheetTarget = RenameSheetTarget(url: currentImageURL)
+    }
 }
 
 private struct KeyboardHandlerView: NSViewRepresentable {
@@ -391,6 +412,7 @@ private struct KeyboardHandlerView: NSViewRepresentable {
     let onNext: () -> Void
     let onFirst: () -> Void
     let onLast: () -> Void
+    let onRename: () -> Void
     let onJumpBackward: () -> Void
     let onJumpForward: () -> Void
 
@@ -400,13 +422,9 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         view.onNext = onNext
         view.onFirst = onFirst
         view.onLast = onLast
+        view.onRename = onRename
         view.onJumpBackward = onJumpBackward
         view.onJumpForward = onJumpForward
-
-        DispatchQueue.main.async {
-            view.window?.makeFirstResponder(view)
-        }
-
         return view
     }
 
@@ -415,12 +433,9 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         nsView.onNext = onNext
         nsView.onFirst = onFirst
         nsView.onLast = onLast
+        nsView.onRename = onRename
         nsView.onJumpBackward = onJumpBackward
         nsView.onJumpForward = onJumpForward
-
-        DispatchQueue.main.async {
-            nsView.window?.makeFirstResponder(nsView)
-        }
     }
 }
 
@@ -429,61 +444,66 @@ private final class KeyAwareView: NSView {
     var onNext: (() -> Void)?
     var onFirst: (() -> Void)?
     var onLast: (() -> Void)?
+    var onRename: (() -> Void)?
     var onJumpBackward: (() -> Void)?
     var onJumpForward: (() -> Void)?
 
-    override var acceptsFirstResponder: Bool {
-        true
+    private var eventMonitor: Any?
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
     }
 
-    override func keyDown(with event: NSEvent) {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+
+        guard window != nil else { return }
+
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleKeyEvent(event) ?? event
+        }
+    }
+
+    private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
+        // Don't intercept when a sheet or modal is active (e.g. rename sheet, open panel)
+        guard NSApp.modalWindow == nil else { return event }
+        guard window?.attachedSheet == nil else { return event }
+
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
 
         switch event.keyCode {
         case 123:
-            if modifiers == [.command] {
-                onJumpBackward?()
-            } else if modifiers.isEmpty {
-                onPrevious?()
-            } else {
-                super.keyDown(with: event)
-            }
+            if modifiers == [.command] { onJumpBackward?(); return nil }
+            if modifiers.isEmpty { onPrevious?(); return nil }
         case 124:
-            if modifiers == [.command] {
-                onJumpForward?()
-            } else if modifiers.isEmpty {
-                onNext?()
-            } else {
-                super.keyDown(with: event)
-            }
+            if modifiers == [.command] { onJumpForward?(); return nil }
+            if modifiers.isEmpty { onNext?(); return nil }
         case 49:
-            if modifiers.isEmpty {
-                onNext?()
-            } else {
-                super.keyDown(with: event)
-            }
+            if modifiers.isEmpty { onNext?(); return nil }
         case 51:
-            if modifiers.isEmpty {
-                onPrevious?()
-            } else {
-                super.keyDown(with: event)
-            }
+            if modifiers.isEmpty { onPrevious?(); return nil }
         case 115:
-            if modifiers.isEmpty {
-                onFirst?()
-            } else {
-                super.keyDown(with: event)
-            }
+            if modifiers.isEmpty { onFirst?(); return nil }
         case 119:
-            if modifiers.isEmpty {
-                onLast?()
-            } else {
-                super.keyDown(with: event)
-            }
+            if modifiers.isEmpty { onLast?(); return nil }
+        case 36, 76:
+            if modifiers.isEmpty { onRename?(); return nil }
         default:
-            super.keyDown(with: event)
+            break
         }
+
+        return event
     }
+}
+
+private struct RenameSheetTarget: Identifiable {
+    let id = UUID()
+    let url: URL
 }
 
 private struct WindowAccessor: NSViewRepresentable {

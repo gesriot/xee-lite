@@ -22,6 +22,14 @@ struct XeeLiteApp: App {
                 .keyboardShortcut("o")
             }
 
+            CommandGroup(after: .newItem) {
+                Button("Rename...") {
+                    appState.requestRenameCurrentImage()
+                }
+                .keyboardShortcut("r", modifiers: [.command])
+                .disabled(!appState.canRenameCurrentImage)
+            }
+
             CommandGroup(after: .toolbar) {
                 Divider()
 
