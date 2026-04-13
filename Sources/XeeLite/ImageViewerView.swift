@@ -5,104 +5,35 @@ struct ImageViewerView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var zoomState: ZoomState
     @State private var window: NSWindow?
-    private let controlsHeight: CGFloat = 48
+    @State private var isFullScreen = false
+    @State private var isChromeVisible = true
+    @State private var autoHideWorkItem: DispatchWorkItem?
+    private let statusBarHeight: CGFloat = 26
+    private let fullScreenChromeInset: CGFloat = 10
+    private let fullScreenAutoHideDelay: TimeInterval = 1.8
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                Color.black.opacity(0.92)
-                    .ignoresSafeArea()
+        Group {
+            if isFullScreen {
+                ZStack(alignment: .bottom) {
+                    viewerContent
 
-                if let image = appState.currentImage {
-                    GeometryReader { proxy in
-                        ZStack {
-                            // Use a blurred version of the same image as a backdrop so
-                            // the main image can stay fully visible without black bars.
-                            Image(nsImage: image)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: proxy.size.width, height: proxy.size.height)
-                                .blur(radius: 24)
-                                .opacity(0.75)
-                                .clipped()
-
-                            Image(nsImage: image)
-                                .resizable()
-                                .frame(
-                                    width: max(zoomState.displayedImageSize.width, 1),
-                                    height: max(zoomState.displayedImageSize.height, 1)
-                                )
-                                .offset(zoomState.offset)
-                        }
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        .clipped()
-                        .overlay {
-                            ImageInteractionView(
-                                onWheelZoom: { deltaY, anchor in
-                                    zoomState.handleWheelZoom(deltaY: deltaY, anchor: anchor)
-                                },
-                                onMagnify: { delta, anchor in
-                                    zoomState.handleMagnify(delta: delta, anchor: anchor)
-                                },
-                                onDoubleClick: { anchor in
-                                    zoomState.toggleFitAndActualSize(anchor: anchor)
-                                },
-                                onPanStart: zoomState.beginPan,
-                                onPanChange: zoomState.updatePan(translation:),
-                                onPanEnd: zoomState.endPan
-                            )
-                        }
-                        .onAppear {
-                            zoomState.updateViewportSize(proxy.size)
-                        }
-                        .onChange(of: proxy.size) { _, newSize in
-                            zoomState.updateViewportSize(newSize)
-                        }
+                    if isChromeVisible {
+                        statusBar
+                            .padding(.horizontal, fullScreenChromeInset)
+                            .padding(.bottom, fullScreenChromeInset)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
-                } else {
-                    VStack(spacing: 12) {
-                        Text("No image loaded")
-                            .font(.title2.weight(.semibold))
-                        Text("Choose an image to start browsing the folder.")
-                            .foregroundStyle(.secondary)
-                        Button("Open Image") {
-                            appState.openImagePicker()
-                        }
-                    }
-                    .padding(24)
-                    .foregroundStyle(.white)
+                }
+            } else {
+                VStack(spacing: 0) {
+                    viewerContent
+                    statusBar
                 }
             }
-
-            HStack(spacing: 12) {
-                Button("Prev") {
-                    appState.showPreviousImage()
-                }
-                .controlSize(.large)
-                .font(.system(size: 18, weight: .semibold))
-                .frame(minWidth: 120, maxHeight: .infinity)
-                .disabled(!appState.canShowPrevious)
-
-                Button("Next") {
-                    appState.showNextImage()
-                }
-                .controlSize(.large)
-                .font(.system(size: 18, weight: .semibold))
-                .frame(minWidth: 120, maxHeight: .infinity)
-                .disabled(!appState.canShowNext)
-
-                Spacer(minLength: 16)
-
-                Text(zoomState.statusText)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.82))
-            }
-            .buttonStyle(.borderedProminent)
-            .padding(.horizontal, 10)
-            .frame(height: controlsHeight)
         }
         .background(Color.black.opacity(0.92))
+        .animation(.easeOut(duration: 0.16), value: isChromeVisible)
         .onAppear {
             appState.loadInitialImage()
             zoomState.updateImagePixelSize(appState.currentImagePixelSize)
@@ -116,6 +47,18 @@ struct ImageViewerView: View {
         .onChange(of: zoomState.fitOnScreenRequestID) { _, _ in
             guard let window else { return }
             resizeWindowForFitOnScreen(window)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
+            guard let resolvedWindow = matchingWindow(from: notification.object) else { return }
+            handleFullScreenTransition(isFullScreen: true, window: resolvedWindow)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
+            guard let resolvedWindow = matchingWindow(from: notification.object) else { return }
+            handleFullScreenTransition(isFullScreen: false, window: resolvedWindow)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeScreenNotification)) { notification in
+            guard let resolvedWindow = matchingWindow(from: notification.object) else { return }
+            updateZoomContext(for: resolvedWindow)
         }
         .background {
             KeyboardHandlerView(
@@ -133,7 +76,114 @@ struct ImageViewerView: View {
                     updateWindowTitle(with: appState.currentImageURL)
                 }
 
+                isFullScreen = nsWindow.styleMask.contains(.fullScreen)
                 updateZoomContext(for: nsWindow)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var viewerContent: some View {
+        ZStack {
+            Color.black.opacity(0.92)
+                .ignoresSafeArea()
+
+            if let image = appState.currentImage {
+                GeometryReader { proxy in
+                    ZStack {
+                        // Use a blurred version of the same image as a backdrop so
+                        // the main image can stay fully visible without black bars.
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .blur(radius: 24)
+                            .opacity(0.75)
+                            .clipped()
+
+                        Image(nsImage: image)
+                            .resizable()
+                            .frame(
+                                width: max(zoomState.displayedImageSize.width, 1),
+                                height: max(zoomState.displayedImageSize.height, 1)
+                            )
+                            .offset(zoomState.offset)
+                    }
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
+                    .overlay {
+                        ImageInteractionView(
+                            onWheelZoom: { deltaY, anchor in
+                                zoomState.handleWheelZoom(deltaY: deltaY, anchor: anchor)
+                            },
+                            onMagnify: { delta, anchor in
+                                zoomState.handleMagnify(delta: delta, anchor: anchor)
+                            },
+                            onDoubleClick: { anchor in
+                                if zoomState.containsDisplayedImage(point: anchor) {
+                                    zoomState.toggleFitAndActualSize(anchor: anchor)
+                                } else {
+                                    toggleFullScreen()
+                                }
+                            },
+                            onPointerActivity: registerUserActivity,
+                            onPanStart: {
+                                zoomState.beginPan()
+                            },
+                            onPanChange: { translation in
+                                zoomState.updatePan(translation: translation)
+                            },
+                            onPanEnd: {
+                                zoomState.endPan()
+                            }
+                        )
+                    }
+                    .onAppear {
+                        zoomState.updateViewportSize(proxy.size)
+                    }
+                    .onChange(of: proxy.size) { _, newSize in
+                        zoomState.updateViewportSize(newSize)
+                    }
+                }
+            } else {
+                VStack(spacing: 12) {
+                    Text("No image loaded")
+                        .font(.title2.weight(.semibold))
+                    Text("Choose an image to start browsing the folder.")
+                        .foregroundStyle(.secondary)
+                    Button("Open Image") {
+                        appState.openImagePicker()
+                    }
+                }
+                .padding(24)
+                .foregroundStyle(.white)
+            }
+        }
+    }
+
+    private var statusBar: some View {
+        HStack {
+            Spacer(minLength: 0)
+
+            Text(zoomState.statusText)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.84))
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: statusBarHeight)
+        .background(isFullScreen ? Color.black.opacity(0.58) : Color.black.opacity(0.84))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(.white.opacity(isFullScreen ? 0.10 : 0.08))
+                .frame(height: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: isFullScreen ? 8 : 0, style: .continuous))
+        .onHover { hovering in
+            if hovering {
+                registerUserActivity()
             }
         }
     }
@@ -158,7 +208,7 @@ struct ImageViewerView: View {
         let screen = window.screen ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? .zero
         let availableContentSize = window.contentRect(forFrameRect: visibleFrame).size
-        let fitOnScreenViewportHeight = max(0, availableContentSize.height - controlsHeight)
+        let fitOnScreenViewportHeight = max(0, availableContentSize.height - statusBarHeight)
 
         zoomState.updateScreen(
             visibleFrameSize: CGSize(width: availableContentSize.width, height: fitOnScreenViewportHeight),
@@ -178,7 +228,7 @@ struct ImageViewerView: View {
 
         let contentSize = CGSize(
             width: min(targetViewportSize.width, maxContentSize.width),
-            height: min(targetViewportSize.height + controlsHeight, maxContentSize.height)
+            height: min(targetViewportSize.height + statusBarHeight, maxContentSize.height)
         )
 
         let targetFrame = centeredFrame(
@@ -198,6 +248,52 @@ struct ImageViewerView: View {
         )
 
         return NSRect(origin: origin, size: frameSize)
+    }
+
+    private func toggleFullScreen() {
+        registerUserActivity()
+        window?.toggleFullScreen(nil)
+    }
+
+    private func matchingWindow(from notificationObject: Any?) -> NSWindow? {
+        guard let resolvedWindow = notificationObject as? NSWindow, resolvedWindow === window else { return nil }
+        return resolvedWindow
+    }
+
+    private func handleFullScreenTransition(isFullScreen: Bool, window: NSWindow) {
+        self.isFullScreen = isFullScreen
+        updateZoomContext(for: window)
+
+        if isFullScreen {
+            registerUserActivity()
+        } else {
+            cancelAutoHide()
+            isChromeVisible = true
+        }
+    }
+
+    private func registerUserActivity() {
+        guard isFullScreen else { return }
+
+        cancelAutoHide()
+
+        if !isChromeVisible {
+            isChromeVisible = true
+        }
+
+        let workItem = DispatchWorkItem {
+            guard isFullScreen else { return }
+            isChromeVisible = false
+            NSCursor.setHiddenUntilMouseMoves(true)
+        }
+
+        autoHideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + fullScreenAutoHideDelay, execute: workItem)
+    }
+
+    private func cancelAutoHide() {
+        autoHideWorkItem?.cancel()
+        autoHideWorkItem = nil
     }
 }
 
@@ -275,6 +371,7 @@ private struct ImageInteractionView: NSViewRepresentable {
     let onWheelZoom: (CGFloat, CGPoint) -> Void
     let onMagnify: (CGFloat, CGPoint) -> Void
     let onDoubleClick: (CGPoint) -> Void
+    let onPointerActivity: () -> Void
     let onPanStart: () -> Void
     let onPanChange: (CGSize) -> Void
     let onPanEnd: () -> Void
@@ -284,6 +381,7 @@ private struct ImageInteractionView: NSViewRepresentable {
         view.onWheelZoom = onWheelZoom
         view.onMagnify = onMagnify
         view.onDoubleClick = onDoubleClick
+        view.onPointerActivity = onPointerActivity
         view.onPanStart = onPanStart
         view.onPanChange = onPanChange
         view.onPanEnd = onPanEnd
@@ -294,6 +392,7 @@ private struct ImageInteractionView: NSViewRepresentable {
         nsView.onWheelZoom = onWheelZoom
         nsView.onMagnify = onMagnify
         nsView.onDoubleClick = onDoubleClick
+        nsView.onPointerActivity = onPointerActivity
         nsView.onPanStart = onPanStart
         nsView.onPanChange = onPanChange
         nsView.onPanEnd = onPanEnd
@@ -304,11 +403,13 @@ private final class ImageInteractionNSView: NSView {
     var onWheelZoom: ((CGFloat, CGPoint) -> Void)?
     var onMagnify: ((CGFloat, CGPoint) -> Void)?
     var onDoubleClick: ((CGPoint) -> Void)?
+    var onPointerActivity: (() -> Void)?
     var onPanStart: (() -> Void)?
     var onPanChange: ((CGSize) -> Void)?
     var onPanEnd: (() -> Void)?
 
     private var dragStartLocation: CGPoint?
+    private var trackingArea: NSTrackingArea?
 
     override var acceptsFirstResponder: Bool {
         true
@@ -322,16 +423,47 @@ private final class ImageInteractionNSView: NSView {
         self
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.acceptsMouseMovedEvents = true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+
+        let nextTrackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.activeAlways, .inVisibleRect, .mouseMoved],
+            owner: self,
+            userInfo: nil
+        )
+
+        addTrackingArea(nextTrackingArea)
+        trackingArea = nextTrackingArea
+    }
+
     override func scrollWheel(with event: NSEvent) {
+        onPointerActivity?()
         let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 8
         onWheelZoom?(event.scrollingDeltaY * multiplier, convertedLocation(for: event))
     }
 
     override func magnify(with event: NSEvent) {
+        onPointerActivity?()
         onMagnify?(event.magnification, convertedLocation(for: event))
     }
 
+    override func mouseMoved(with event: NSEvent) {
+        onPointerActivity?()
+    }
+
     override func mouseDown(with event: NSEvent) {
+        onPointerActivity?()
+
         if event.clickCount == 2 {
             dragStartLocation = nil
             onDoubleClick?(convertedLocation(for: event))
@@ -345,6 +477,7 @@ private final class ImageInteractionNSView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let dragStartLocation else { return }
 
+        onPointerActivity?()
         let currentLocation = convertedLocation(for: event)
         onPanChange?(
             CGSize(
@@ -355,6 +488,7 @@ private final class ImageInteractionNSView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        onPointerActivity?()
         dragStartLocation = nil
         onPanEnd?()
     }

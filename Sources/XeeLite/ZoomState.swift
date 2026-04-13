@@ -249,6 +249,20 @@ final class ZoomState: ObservableObject {
         return displaySize(for: fitScale)
     }
 
+    func containsDisplayedImage(point: CGPoint) -> Bool {
+        guard hasImage else { return false }
+
+        let imageSize = displayedImageSize
+        let imageRect = CGRect(
+            x: (viewportSize.width - imageSize.width) / 2 + offset.width,
+            y: (viewportSize.height - imageSize.height) / 2 + offset.height,
+            width: imageSize.width,
+            height: imageSize.height
+        )
+
+        return imageRect.contains(point)
+    }
+
     private func clampedOffset(for proposedOffset: CGSize, scale: CGFloat) -> CGSize {
         guard viewportSize.width > 0, viewportSize.height > 0 else { return proposedOffset }
 

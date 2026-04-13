@@ -23,6 +23,13 @@ struct XeeLiteApp: App {
             CommandGroup(after: .toolbar) {
                 Divider()
 
+                Button("Toggle Full Screen") {
+                    NSApp.keyWindow?.toggleFullScreen(nil)
+                }
+                .keyboardShortcut("f", modifiers: [.command])
+
+                Divider()
+
                 Button("Zoom In") {
                     zoomState.zoomIn()
                 }
