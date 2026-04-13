@@ -79,6 +79,28 @@ final class AppState: ObservableObject {
         updateDisplayedImage()
     }
 
+    func showFirstImage() {
+        guard !imageURLs.isEmpty, currentIndex != 0 else { return }
+        currentIndex = 0
+        updateDisplayedImage()
+    }
+
+    func showLastImage() {
+        guard let lastIndex = imageURLs.indices.last, currentIndex != lastIndex else { return }
+        currentIndex = lastIndex
+        updateDisplayedImage()
+    }
+
+    func jumpImages(by delta: Int) {
+        guard !imageURLs.isEmpty, delta != 0 else { return }
+
+        let nextIndex = min(max(currentIndex + delta, 0), imageURLs.count - 1)
+        guard nextIndex != currentIndex else { return }
+
+        currentIndex = nextIndex
+        updateDisplayedImage()
+    }
+
     var canShowPrevious: Bool {
         currentIndex > 0
     }

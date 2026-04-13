@@ -62,8 +62,16 @@ struct ImageViewerView: View {
         }
         .background {
             KeyboardHandlerView(
-                onLeftArrow: appState.showPreviousImage,
-                onRightArrow: appState.showNextImage
+                onPrevious: appState.showPreviousImage,
+                onNext: appState.showNextImage,
+                onFirst: appState.showFirstImage,
+                onLast: appState.showLastImage,
+                onJumpBackward: {
+                    appState.jumpImages(by: -10)
+                },
+                onJumpForward: {
+                    appState.jumpImages(by: 10)
+                }
             )
         }
         .background {
@@ -298,13 +306,21 @@ struct ImageViewerView: View {
 }
 
 private struct KeyboardHandlerView: NSViewRepresentable {
-    let onLeftArrow: () -> Void
-    let onRightArrow: () -> Void
+    let onPrevious: () -> Void
+    let onNext: () -> Void
+    let onFirst: () -> Void
+    let onLast: () -> Void
+    let onJumpBackward: () -> Void
+    let onJumpForward: () -> Void
 
     func makeNSView(context: Context) -> KeyAwareView {
         let view = KeyAwareView()
-        view.onLeftArrow = onLeftArrow
-        view.onRightArrow = onRightArrow
+        view.onPrevious = onPrevious
+        view.onNext = onNext
+        view.onFirst = onFirst
+        view.onLast = onLast
+        view.onJumpBackward = onJumpBackward
+        view.onJumpForward = onJumpForward
 
         DispatchQueue.main.async {
             view.window?.makeFirstResponder(view)
@@ -314,8 +330,12 @@ private struct KeyboardHandlerView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: KeyAwareView, context: Context) {
-        nsView.onLeftArrow = onLeftArrow
-        nsView.onRightArrow = onRightArrow
+        nsView.onPrevious = onPrevious
+        nsView.onNext = onNext
+        nsView.onFirst = onFirst
+        nsView.onLast = onLast
+        nsView.onJumpBackward = onJumpBackward
+        nsView.onJumpForward = onJumpForward
 
         DispatchQueue.main.async {
             nsView.window?.makeFirstResponder(nsView)
@@ -324,19 +344,61 @@ private struct KeyboardHandlerView: NSViewRepresentable {
 }
 
 private final class KeyAwareView: NSView {
-    var onLeftArrow: (() -> Void)?
-    var onRightArrow: (() -> Void)?
+    var onPrevious: (() -> Void)?
+    var onNext: (() -> Void)?
+    var onFirst: (() -> Void)?
+    var onLast: (() -> Void)?
+    var onJumpBackward: (() -> Void)?
+    var onJumpForward: (() -> Void)?
 
     override var acceptsFirstResponder: Bool {
         true
     }
 
     override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
         switch event.keyCode {
         case 123:
-            onLeftArrow?()
+            if modifiers == [.command] {
+                onJumpBackward?()
+            } else if modifiers.isEmpty {
+                onPrevious?()
+            } else {
+                super.keyDown(with: event)
+            }
         case 124:
-            onRightArrow?()
+            if modifiers == [.command] {
+                onJumpForward?()
+            } else if modifiers.isEmpty {
+                onNext?()
+            } else {
+                super.keyDown(with: event)
+            }
+        case 49:
+            if modifiers.isEmpty {
+                onNext?()
+            } else {
+                super.keyDown(with: event)
+            }
+        case 51:
+            if modifiers.isEmpty {
+                onPrevious?()
+            } else {
+                super.keyDown(with: event)
+            }
+        case 115:
+            if modifiers.isEmpty {
+                onFirst?()
+            } else {
+                super.keyDown(with: event)
+            }
+        case 119:
+            if modifiers.isEmpty {
+                onLast?()
+            } else {
+                super.keyDown(with: event)
+            }
         default:
             super.keyDown(with: event)
         }
