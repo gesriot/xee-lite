@@ -8,6 +8,7 @@ final class AppState: ObservableObject {
     @Published private(set) var currentIndex: Int = 0
     @Published private(set) var currentImage: NSImage?
     @Published private(set) var currentImageURL: URL?
+    @Published private(set) var currentImagePixelSize: CGSize?
 
     private let supportedExtensions = Set([
         "avif", "bmp", "gif", "heic", "jpeg", "jpg", "png", "tif", "tiff", "webp"
@@ -90,6 +91,7 @@ final class AppState: ObservableObject {
         guard imageURLs.indices.contains(currentIndex) else {
             currentImage = nil
             currentImageURL = nil
+            currentImagePixelSize = nil
             return
         }
 
@@ -98,11 +100,13 @@ final class AppState: ObservableObject {
         guard let image = NSImage(contentsOf: url) else {
             currentImage = nil
             currentImageURL = url
+            currentImagePixelSize = nil
             return
         }
 
         currentImage = image
         currentImageURL = url
+        currentImagePixelSize = pixelSize(for: image)
     }
 
     private func setSingleImage(url: URL, error: Error? = nil) {
@@ -112,8 +116,24 @@ final class AppState: ObservableObject {
 
         if let image = NSImage(contentsOf: url) {
             currentImage = image
+            currentImagePixelSize = pixelSize(for: image)
         } else {
             currentImage = nil
+            currentImagePixelSize = nil
         }
+    }
+
+    private func pixelSize(for image: NSImage) -> CGSize? {
+        if let representation = image.representations.first(where: { $0.pixelsWide > 0 && $0.pixelsHigh > 0 }) {
+            return CGSize(width: representation.pixelsWide, height: representation.pixelsHigh)
+        }
+
+        if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return CGSize(width: cgImage.width, height: cgImage.height)
+        }
+
+        let size = image.size
+        guard size.width > 0, size.height > 0 else { return nil }
+        return size
     }
 }
