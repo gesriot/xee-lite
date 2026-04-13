@@ -7,6 +7,7 @@ struct StatusBarView: View {
     let format: String?
     let positionText: String?
     let zoomText: String
+    let actionMessage: String?
     let animationState: StatusBarAnimationState?
     let isFullScreen: Bool
 
@@ -63,6 +64,13 @@ struct StatusBarView: View {
                 Text(fileName)
                     .lineLimit(1)
                     .truncationMode(.middle)
+            }
+
+            if let actionMessage, !actionMessage.isEmpty {
+                separator
+                Text(actionMessage)
+                    .lineLimit(1)
+                    .foregroundStyle(.white.opacity(0.96))
             }
 
             ForEach(Array(metadataItems.enumerated()), id: \.offset) { _, item in

@@ -30,6 +30,32 @@ struct XeeLiteApp: App {
                 .disabled(!appState.canRenameCurrentImage)
             }
 
+            CommandMenu("Transfer") {
+                Menu("Copy to") {
+                    ForEach(appState.fileActionDestinations) { destination in
+                        Button(destination.menuTitle) {
+                            appState.copyCurrentImage(toDestinationSlot: destination.slotNumber)
+                        }
+                        .disabled(!destination.isConfigured || !appState.canTransferCurrentImage)
+                    }
+                }
+
+                Menu("Move to") {
+                    ForEach(appState.fileActionDestinations) { destination in
+                        Button(destination.menuTitle) {
+                            appState.moveCurrentImage(toDestinationSlot: destination.slotNumber)
+                        }
+                        .disabled(!destination.isConfigured || !appState.canTransferCurrentImage)
+                    }
+                }
+
+                Divider()
+
+                Button("Manage Destinations…") {
+                    appState.requestManageDestinations()
+                }
+            }
+
             CommandGroup(after: .toolbar) {
                 Divider()
 

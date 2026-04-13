@@ -4,6 +4,8 @@ import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
+    private static let fileActionDestinationsDefaultsKey = "fileActionDestinations.v1"
+
     @Published private(set) var imageURLs: [URL] = []
     @Published private(set) var currentIndex: Int = 0
     @Published private(set) var currentImage: NSImage?
@@ -13,6 +15,16 @@ final class AppState: ObservableObject {
     @Published private(set) var currentMetadata = ImageMetadata(sections: [])
     @Published private(set) var currentAnimatedImage: AnimatedImage?
     @Published private(set) var renameRequestID: UInt64 = 0
+    @Published private(set) var manageDestinationsRequestID: UInt64 = 0
+    @Published private(set) var fileActionDestinations: [FileActionDestination]
+    @Published private(set) var fileActionMessage: String?
+    @Published var activeAlert: FileActionAlertState?
+
+    private var fileActionMessageDismissWorkItem: DispatchWorkItem?
+
+    init() {
+        fileActionDestinations = Self.loadFileActionDestinations()
+    }
 
     func openImagePicker() {
         let panel = NSOpenPanel()
@@ -113,6 +125,10 @@ final class AppState: ObservableObject {
         currentImageURL != nil
     }
 
+    var canTransferCurrentImage: Bool {
+        currentImageURL != nil
+    }
+
     var currentImagePositionText: String? {
         guard imageURLs.indices.contains(currentIndex) else { return nil }
         return "\(currentIndex + 1)/\(imageURLs.count)"
@@ -126,6 +142,31 @@ final class AppState: ObservableObject {
     func requestRenameCurrentImage() {
         guard canRenameCurrentImage else { return }
         renameRequestID &+= 1
+    }
+
+    func requestManageDestinations() {
+        manageDestinationsRequestID &+= 1
+    }
+
+    func setFileActionDestination(_ folderURL: URL, forSlot slotNumber: Int) {
+        guard (1...9).contains(slotNumber) else { return }
+        updateFileActionDestination(
+            forSlot: slotNumber,
+            path: folderURL.standardizedFileURL.path
+        )
+    }
+
+    func clearFileActionDestination(forSlot slotNumber: Int) {
+        guard (1...9).contains(slotNumber) else { return }
+        updateFileActionDestination(forSlot: slotNumber, path: nil)
+    }
+
+    func copyCurrentImage(toDestinationSlot slotNumber: Int) {
+        performCurrentImageTransfer(.copy, toDestinationSlot: slotNumber)
+    }
+
+    func moveCurrentImage(toDestinationSlot slotNumber: Int) {
+        performCurrentImageTransfer(.move, toDestinationSlot: slotNumber)
     }
 
     func renameValidationMessage(forBaseName baseName: String) -> String? {
@@ -260,6 +301,122 @@ final class AppState: ObservableObject {
         return size.int64Value
     }
 
+    private func performCurrentImageTransfer(_ action: FileTransferAction, toDestinationSlot slotNumber: Int) {
+        guard let currentImageURL = currentImageURL?.standardizedFileURL else {
+            presentAlert(
+                title: "\(action.verb) Failed",
+                message: FileTransferError.noImage.localizedDescription
+            )
+            return
+        }
+
+        guard let destination = fileActionDestinations.first(where: { $0.slotNumber == slotNumber }) else { return }
+
+        guard let destinationFolderURL = destination.url?.standardizedFileURL else {
+            requestManageDestinations()
+            return
+        }
+
+        do {
+            let transferTargetURL = try transferTargetURL(
+                for: currentImageURL,
+                destinationFolderURL: destinationFolderURL
+            )
+
+            switch action {
+            case .copy:
+                try FileManager.default.copyItem(at: currentImageURL, to: transferTargetURL)
+                presentFileActionMessage("\(action.pastTenseVerb) to \(destination.displayName)")
+            case .move:
+                try FileManager.default.moveItem(at: currentImageURL, to: transferTargetURL)
+                updateAfterMovingCurrentImage(from: currentImageURL, to: transferTargetURL)
+                presentFileActionMessage("\(action.pastTenseVerb) to \(destination.displayName)")
+            }
+        } catch let error as FileTransferError {
+            presentAlert(title: "\(action.verb) Failed", message: error.localizedDescription)
+        } catch {
+            presentAlert(title: "\(action.verb) Failed", message: error.localizedDescription)
+        }
+    }
+
+    private func transferTargetURL(for sourceURL: URL, destinationFolderURL: URL) throws -> URL {
+        let resourceValues = try destinationFolderURL.resourceValues(forKeys: [.isDirectoryKey])
+        guard resourceValues.isDirectory == true else {
+            throw FileTransferError.invalidDestinationFolder
+        }
+
+        if sourceURL.deletingLastPathComponent() == destinationFolderURL {
+            throw FileTransferError.sameLocation
+        }
+
+        let targetURL = destinationFolderURL.appendingPathComponent(sourceURL.lastPathComponent)
+        guard !FileManager.default.fileExists(atPath: targetURL.path) else {
+            throw FileTransferError.duplicateName(targetURL.lastPathComponent)
+        }
+
+        return targetURL
+    }
+
+    private func updateAfterMovingCurrentImage(from sourceURL: URL, to destinationURL: URL) {
+        let remainingImageURLs = imageURLs.filter { $0.standardizedFileURL != sourceURL }
+
+        guard !remainingImageURLs.isEmpty else {
+            loadImage(at: destinationURL)
+            return
+        }
+
+        imageURLs = remainingImageURLs
+        currentIndex = min(currentIndex, remainingImageURLs.count - 1)
+        updateDisplayedImage()
+    }
+
+    private func presentAlert(title: String, message: String) {
+        activeAlert = FileActionAlertState(title: title, message: message)
+        NSSound.beep()
+    }
+
+    private func presentFileActionMessage(_ message: String) {
+        fileActionMessageDismissWorkItem?.cancel()
+        fileActionMessage = message
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.fileActionMessage = nil
+        }
+
+        fileActionMessageDismissWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
+    }
+
+    private func updateFileActionDestination(forSlot slotNumber: Int, path: String?) {
+        guard let index = fileActionDestinations.firstIndex(where: { $0.slotNumber == slotNumber }) else { return }
+        fileActionDestinations[index].path = path
+        persistFileActionDestinations()
+    }
+
+    private func persistFileActionDestinations() {
+        let encoder = JSONEncoder()
+        guard let data = try? encoder.encode(fileActionDestinations) else { return }
+        UserDefaults.standard.set(data, forKey: Self.fileActionDestinationsDefaultsKey)
+    }
+
+    private static func loadFileActionDestinations() -> [FileActionDestination] {
+        let defaultSlots = (1...9).map(FileActionDestination.empty(slotNumber:))
+
+        guard
+            let data = UserDefaults.standard.data(forKey: fileActionDestinationsDefaultsKey),
+            let storedSlots = try? JSONDecoder().decode([FileActionDestination].self, from: data)
+        else {
+            return defaultSlots
+        }
+
+        var slotsByNumber = Dictionary(uniqueKeysWithValues: defaultSlots.map { ($0.slotNumber, $0) })
+        for slot in storedSlots where (1...9).contains(slot.slotNumber) {
+            slotsByNumber[slot.slotNumber] = slot
+        }
+
+        return (1...9).compactMap { slotsByNumber[$0] }
+    }
+
     private func renamedImageURL(forBaseName baseName: String, from currentURL: URL) throws -> URL {
         let trimmedBaseName = baseName.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -320,6 +477,26 @@ final class AppState: ObservableObject {
             if !FileManager.default.fileExists(atPath: candidateURL.path) {
                 return directoryURL.appendingPathComponent(candidateURL.lastPathComponent)
             }
+        }
+    }
+}
+
+private enum FileTransferError: LocalizedError {
+    case noImage
+    case invalidDestinationFolder
+    case sameLocation
+    case duplicateName(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .noImage:
+            return "No image loaded."
+        case .invalidDestinationFolder:
+            return "The selected destination folder is no longer available."
+        case .sameLocation:
+            return "The file is already in that folder."
+        case let .duplicateName(name):
+            return "A file named \"\(name)\" already exists in the destination folder."
         }
     }
 }

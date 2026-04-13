@@ -8,7 +8,7 @@ struct ImageViewerView: View {
     @AppStorage("showsInspector") private var showsInspector = false
     @StateObject private var animatedPlayback = AnimatedImagePlaybackState()
     @State private var window: NSWindow?
-    @State private var renameSheetTarget: RenameSheetTarget?
+    @State private var activeSheet: ViewerSheet?
     @State private var isFullScreen = false
     @State private var isChromeVisible = true
     @State private var autoHideWorkItem: DispatchWorkItem?
@@ -17,28 +17,7 @@ struct ImageViewerView: View {
     private let inspectorWidth: CGFloat = 300
 
     var body: some View {
-        Group {
-            if isFullScreen {
-                ZStack(alignment: .bottom) {
-                    contentLayout
-
-                    if showsStatusBar, isChromeVisible {
-                        statusBar
-                            .padding(.horizontal, fullScreenChromeInset)
-                            .padding(.bottom, fullScreenChromeInset)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                }
-            } else {
-                VStack(spacing: 0) {
-                    contentLayout
-
-                    if showsStatusBar {
-                        statusBar
-                    }
-                }
-            }
-        }
+        rootContent
         .background(Color.black.opacity(0.92))
         .animation(.easeOut(duration: 0.16), value: isChromeVisible)
         .onAppear {
@@ -55,6 +34,9 @@ struct ImageViewerView: View {
         }
         .onChange(of: appState.renameRequestID) { _, _ in
             presentRenameSheetIfPossible()
+        }
+        .onChange(of: appState.manageDestinationsRequestID) { _, _ in
+            activeSheet = .manageDestinations
         }
         .onChange(of: showsStatusBar) { _, _ in
             guard let window else { return }
@@ -95,6 +77,8 @@ struct ImageViewerView: View {
                 onFirst: appState.showFirstImage,
                 onLast: appState.showLastImage,
                 onRename: appState.requestRenameCurrentImage,
+                onMoveToDestinationSlot: appState.moveCurrentImage(toDestinationSlot:),
+                onCopyToDestinationSlot: appState.copyCurrentImage(toDestinationSlot:),
                 onJumpBackward: {
                     appState.jumpImages(by: -10)
                 },
@@ -117,16 +101,37 @@ struct ImageViewerView: View {
                 updateZoomContext(for: nsWindow)
             }
         }
-        .sheet(item: $renameSheetTarget) { target in
-            RenameImageSheet(
-                imageURL: target.url,
-                validationMessage: { baseName in
-                    appState.renameValidationMessage(forBaseName: baseName, imageURL: target.url)
-                },
-                onRename: { baseName in
-                    try appState.renameImage(at: target.url, toBaseName: baseName)
-                }
+        .sheet(item: $activeSheet, content: sheetView)
+        .alert(item: activeAlertBinding) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK"))
             )
+        }
+    }
+
+    @ViewBuilder
+    private var rootContent: some View {
+        if isFullScreen {
+            ZStack(alignment: .bottom) {
+                contentLayout
+
+                if showsStatusBar, isChromeVisible {
+                    statusBar
+                        .padding(.horizontal, fullScreenChromeInset)
+                        .padding(.bottom, fullScreenChromeInset)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+        } else {
+            VStack(spacing: 0) {
+                contentLayout
+
+                if showsStatusBar {
+                    statusBar
+                }
+            }
         }
     }
 
@@ -238,6 +243,7 @@ struct ImageViewerView: View {
             format: appState.currentImageFormatText,
             positionText: appState.currentImagePositionText,
             zoomText: zoomState.statusText,
+            actionMessage: appState.fileActionMessage,
             animationState: animatedStatusBarState,
             isFullScreen: isFullScreen
         )
@@ -403,7 +409,41 @@ struct ImageViewerView: View {
 
     private func presentRenameSheetIfPossible() {
         guard let currentImageURL = appState.currentImageURL else { return }
-        renameSheetTarget = RenameSheetTarget(url: currentImageURL)
+        activeSheet = .rename(currentImageURL)
+    }
+
+    private var activeAlertBinding: Binding<FileActionAlertState?> {
+        Binding(
+            get: { appState.activeAlert },
+            set: { appState.activeAlert = $0 }
+        )
+    }
+
+    @ViewBuilder
+    private func sheetView(for sheet: ViewerSheet) -> some View {
+        switch sheet {
+        case let .rename(url):
+            RenameImageSheet(
+                imageURL: url,
+                validationMessage: { baseName in
+                    appState.renameValidationMessage(forBaseName: baseName, imageURL: url)
+                },
+                onRename: { baseName in
+                    try appState.renameImage(at: url, toBaseName: baseName)
+                }
+            )
+        case .manageDestinations:
+            TransferDestinationsSheet(
+                destinations: appState.fileActionDestinations,
+                currentImageURL: appState.currentImageURL,
+                onChooseDestination: { slotNumber, folderURL in
+                    appState.setFileActionDestination(folderURL, forSlot: slotNumber)
+                },
+                onClearDestination: { slotNumber in
+                    appState.clearFileActionDestination(forSlot: slotNumber)
+                }
+            )
+        }
     }
 }
 
@@ -413,6 +453,8 @@ private struct KeyboardHandlerView: NSViewRepresentable {
     let onFirst: () -> Void
     let onLast: () -> Void
     let onRename: () -> Void
+    let onMoveToDestinationSlot: (Int) -> Void
+    let onCopyToDestinationSlot: (Int) -> Void
     let onJumpBackward: () -> Void
     let onJumpForward: () -> Void
 
@@ -423,6 +465,8 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         view.onFirst = onFirst
         view.onLast = onLast
         view.onRename = onRename
+        view.onMoveToDestinationSlot = onMoveToDestinationSlot
+        view.onCopyToDestinationSlot = onCopyToDestinationSlot
         view.onJumpBackward = onJumpBackward
         view.onJumpForward = onJumpForward
         return view
@@ -434,6 +478,8 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         nsView.onFirst = onFirst
         nsView.onLast = onLast
         nsView.onRename = onRename
+        nsView.onMoveToDestinationSlot = onMoveToDestinationSlot
+        nsView.onCopyToDestinationSlot = onCopyToDestinationSlot
         nsView.onJumpBackward = onJumpBackward
         nsView.onJumpForward = onJumpForward
     }
@@ -445,6 +491,8 @@ private final class KeyAwareView: NSView {
     var onFirst: (() -> Void)?
     var onLast: (() -> Void)?
     var onRename: (() -> Void)?
+    var onMoveToDestinationSlot: ((Int) -> Void)?
+    var onCopyToDestinationSlot: ((Int) -> Void)?
     var onJumpBackward: (() -> Void)?
     var onJumpForward: (() -> Void)?
 
@@ -473,8 +521,21 @@ private final class KeyAwareView: NSView {
         // Don't intercept when a sheet or modal is active (e.g. rename sheet, open panel)
         guard NSApp.modalWindow == nil else { return event }
         guard window?.attachedSheet == nil else { return event }
+        guard window?.isKeyWindow == true else { return event }
 
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+
+        if let destinationSlot = destinationSlot(for: event.keyCode) {
+            if modifiers.isEmpty {
+                onMoveToDestinationSlot?(destinationSlot)
+                return nil
+            }
+
+            if modifiers == [.shift] {
+                onCopyToDestinationSlot?(destinationSlot)
+                return nil
+            }
+        }
 
         switch event.keyCode {
         case 123:
@@ -499,11 +560,35 @@ private final class KeyAwareView: NSView {
 
         return event
     }
+
+    private func destinationSlot(for keyCode: UInt16) -> Int? {
+        switch keyCode {
+        case 18: return 1
+        case 19: return 2
+        case 20: return 3
+        case 21: return 4
+        case 23: return 5
+        case 22: return 6
+        case 26: return 7
+        case 28: return 8
+        case 25: return 9
+        default: return nil
+        }
+    }
 }
 
-private struct RenameSheetTarget: Identifiable {
-    let id = UUID()
-    let url: URL
+private enum ViewerSheet: Identifiable {
+    case rename(URL)
+    case manageDestinations
+
+    var id: String {
+        switch self {
+        case let .rename(url):
+            return "rename:\(url.path)"
+        case .manageDestinations:
+            return "manage-destinations"
+        }
+    }
 }
 
 private struct WindowAccessor: NSViewRepresentable {
