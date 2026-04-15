@@ -216,12 +216,15 @@ struct ImageViewerView: View {
                 window = nsWindow
 
                 if isNewWindow {
+                    appState.registerViewerWindow(nsWindow)
                     configureWindow(nsWindow)
                     updateWindowTitle(with: appState.currentImageURL)
 
                     if slideshowState.isPlaying {
                         handleSlideshowPlaybackChange(isPlaying: true)
                     }
+                } else {
+                    appState.registerViewerWindow(nsWindow)
                 }
 
                 isFullScreen = nsWindow.styleMask.contains(.fullScreen)

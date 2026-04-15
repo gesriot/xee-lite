@@ -2,11 +2,14 @@ import SwiftUI
 
 @main
 struct XeeLiteApp: App {
+    private static let browserWindowID = "folder-browser"
+
     @StateObject private var appState = AppState()
     @StateObject private var zoomState = ZoomState()
     @StateObject private var slideshowState = SlideshowPlaybackState()
     @StateObject private var cropState = CropState()
     @StateObject private var colorAdjustmentState = ColorAdjustmentState()
+    @Environment(\.openWindow) private var openWindow
     @AppStorage("showsStatusBar") private var showsStatusBar = true
     @AppStorage("showsInspector") private var showsInspector = false
     @AppStorage("showsThumbnailStrip") private var showsThumbnailStrip = true
@@ -21,6 +24,11 @@ struct XeeLiteApp: App {
                 .environmentObject(colorAdjustmentState)
                 .frame(minWidth: 720, minHeight: 520)
         }
+        Window("Browser", id: Self.browserWindowID) {
+            FolderBrowserView()
+                .environmentObject(appState)
+        }
+        .defaultSize(width: 1040, height: 720)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open Image...") {
@@ -202,6 +210,13 @@ struct XeeLiteApp: App {
 
                 Toggle("Show Thumbnail Strip", isOn: $showsThumbnailStrip)
                     .keyboardShortcut("t", modifiers: [.command, .option])
+
+                Divider()
+
+                Button("Show Browser") {
+                    openWindow(id: Self.browserWindowID)
+                }
+                .keyboardShortcut("b", modifiers: [.command])
 
                 Divider()
 

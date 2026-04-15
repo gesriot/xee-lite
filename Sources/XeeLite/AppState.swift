@@ -22,6 +22,7 @@ final class AppState: ObservableObject {
     @Published private(set) var fileActionMessage: String?
     @Published var activeAlert: FileActionAlertState?
 
+    private weak var viewerWindow: NSWindow?
     private var fileActionMessageDismissWorkItem: DispatchWorkItem?
 
     init() {
@@ -277,6 +278,16 @@ final class AppState: ObservableObject {
 
     func showFileActionMessage(_ message: String) {
         presentFileActionMessage(message)
+    }
+
+    func registerViewerWindow(_ window: NSWindow) {
+        viewerWindow = window
+    }
+
+    func openImageInViewer(at url: URL) {
+        loadImage(at: url)
+        viewerWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate()
     }
 
     func renameCurrentImage(toBaseName baseName: String) throws {
