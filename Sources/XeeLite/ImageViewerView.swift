@@ -6,6 +6,7 @@ struct ImageViewerView: View {
     @EnvironmentObject private var zoomState: ZoomState
     @EnvironmentObject private var slideshowState: SlideshowPlaybackState
     @EnvironmentObject private var cropState: CropState
+    @EnvironmentObject private var colorAdjustmentState: ColorAdjustmentState
     @AppStorage("showsStatusBar") private var showsStatusBar = true
     @AppStorage("showsInspector") private var showsInspector = false
     @StateObject private var animatedPlayback = AnimatedImagePlaybackState()
@@ -30,28 +31,49 @@ struct ImageViewerView: View {
         .animation(.easeOut(duration: 0.16), value: isChromeVisible)
     }
 
-    private var lifecycleObservedContent: some View {
+    private var appearanceObservedContent: some View {
         baseStyledContent
         .onAppear {
             appState.loadInitialImage()
             zoomState.updateImagePixelSize(appState.currentImagePixelSize)
             animatedPlayback.setAnimatedImage(appState.currentAnimatedImage)
             slideshowState.onAdvance = advanceSlideshow
+            refreshColorPreview()
         }
         .onDisappear {
             slideshowState.onAdvance = nil
             slideshowState.pause()
+            colorAdjustmentState.deactivate()
         }
+    }
+
+    private var imageObservedContent: some View {
+        appearanceObservedContent
         .onChange(of: appState.currentImageURL) { _, newURL in
             updateWindowTitle(with: newURL)
             animatedPlayback.setAnimatedImage(appState.currentAnimatedImage)
             if cropState.isActive {
                 cropState.deactivate()
             }
+            if newURL == nil {
+                colorAdjustmentState.deactivate()
+            } else {
+                refreshColorPreview()
+            }
         }
         .onChange(of: appState.currentImagePixelSize) { _, newSize in
             zoomState.updateImagePixelSize(newSize)
+            if newSize == nil {
+                colorAdjustmentState.deactivate()
+            }
         }
+        .onChange(of: animatedPlayback.currentFrameIndex) { _, _ in
+            refreshColorPreview()
+        }
+    }
+
+    private var lifecycleObservedContent: some View {
+        imageObservedContent
         .onChange(of: appState.renameRequestID) { _, _ in
             presentRenameSheetIfPossible()
         }
@@ -74,6 +96,21 @@ struct ImageViewerView: View {
             if newCount < 2 {
                 slideshowState.pause()
             }
+        }
+        .onChange(of: colorAdjustmentState.activateRequestID) { _, _ in
+            startColorAdjustment()
+        }
+        .onChange(of: colorAdjustmentState.isActive) { _, _ in
+            refreshColorPreview()
+        }
+        .onChange(of: colorAdjustmentState.brightness) { _, _ in
+            refreshColorPreview()
+        }
+        .onChange(of: colorAdjustmentState.contrast) { _, _ in
+            refreshColorPreview()
+        }
+        .onChange(of: colorAdjustmentState.gamma) { _, _ in
+            refreshColorPreview()
         }
         .onChange(of: slideshowState.isPlaying) { _, isPlaying in
             handleSlideshowPlaybackChange(isPlaying: isPlaying)
@@ -136,6 +173,9 @@ struct ImageViewerView: View {
                 onSaveCrop: {
                     cropState.requestSave()
                 },
+                onCancelColorAdjustments: {
+                    colorAdjustmentState.deactivate()
+                },
                 onToggleSlideshow: toggleSlideshowFromKeyboard,
                 onJumpBackward: {
                     jumpImages(by: -10)
@@ -144,6 +184,7 @@ struct ImageViewerView: View {
                     jumpImages(by: 10)
                 },
                 isCropActive: cropState.isActive,
+                isColorAdjustmentActive: colorAdjustmentState.isActive,
                 isSlideshowPlaying: slideshowState.isPlaying
             )
         }
@@ -229,7 +270,7 @@ struct ImageViewerView: View {
         HStack(spacing: 0) {
             viewerContent
 
-            if showsInspector, !slideshowState.isPlaying, !cropState.isActive {
+            if showsInspector, !slideshowState.isPlaying, !cropState.isActive, !colorAdjustmentState.isActive {
                 MetadataInspectorView(
                     metadata: appState.currentMetadata,
                     isFullScreen: isFullScreen
@@ -259,6 +300,25 @@ struct ImageViewerView: View {
                         )
                         .id(slideIdentity)
                         .transition(slideshowTransition)
+
+                        if colorAdjustmentState.isActive {
+                            VStack {
+                                HStack {
+                                    Spacer()
+
+                                    ColorAdjustmentPanelView(
+                                        colorAdjustmentState: colorAdjustmentState,
+                                        onPointerActivity: registerUserActivity,
+                                        onClose: {
+                                            colorAdjustmentState.deactivate()
+                                        }
+                                    )
+                                }
+
+                                Spacer()
+                            }
+                            .padding(16)
+                        }
                     }
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
@@ -410,15 +470,19 @@ struct ImageViewerView: View {
     }
 
     private var currentInspectorWidth: CGFloat {
-        showsInspector && !slideshowState.isPlaying && !cropState.isActive ? inspectorWidth : 0
+        showsInspector && !slideshowState.isPlaying && !cropState.isActive && !colorAdjustmentState.isActive ? inspectorWidth : 0
     }
 
-    private var displayedImage: NSImage? {
+    private var rawDisplayedImage: NSImage? {
         animatedPlayback.currentFrameImage ?? appState.currentImage
     }
 
+    private var displayedImage: NSImage? {
+        colorAdjustmentState.previewImage ?? rawDisplayedImage
+    }
+
     private var backgroundImage: NSImage? {
-        appState.currentImage ?? displayedImage
+        appState.currentImage ?? rawDisplayedImage
     }
 
     private var slideIdentity: String {
@@ -602,6 +666,18 @@ struct ImageViewerView: View {
         slideshowState.togglePlayback()
     }
 
+    private func startColorAdjustment() {
+        guard appState.currentImageURL != nil else { return }
+
+        colorAdjustmentState.activate()
+        refreshColorPreview()
+        registerUserActivity()
+    }
+
+    private func refreshColorPreview() {
+        colorAdjustmentState.refreshPreview(from: rawDisplayedImage)
+    }
+
     private func startCrop() {
         guard appState.canCropCurrentImage else { return }
 
@@ -628,7 +704,7 @@ struct ImageViewerView: View {
     private func saveCrop(mode: CropSaveMode) {
         guard
             cropState.isActive,
-            let sourceImage = displayedImage,
+            let sourceImage = rawDisplayedImage,
             let sourcePixelSize = appState.currentImagePixelSize,
             let selectionRect = cropState.normalizedSelectionRect
         else {
@@ -845,10 +921,12 @@ private struct KeyboardHandlerView: NSViewRepresentable {
     let onCopyToDestinationSlot: (Int) -> Void
     let onCancelCrop: () -> Void
     let onSaveCrop: () -> Void
+    let onCancelColorAdjustments: () -> Void
     let onToggleSlideshow: () -> Void
     let onJumpBackward: () -> Void
     let onJumpForward: () -> Void
     let isCropActive: Bool
+    let isColorAdjustmentActive: Bool
     let isSlideshowPlaying: Bool
 
     func makeNSView(context: Context) -> KeyAwareView {
@@ -864,10 +942,12 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         view.onCopyToDestinationSlot = onCopyToDestinationSlot
         view.onCancelCrop = onCancelCrop
         view.onSaveCrop = onSaveCrop
+        view.onCancelColorAdjustments = onCancelColorAdjustments
         view.onToggleSlideshow = onToggleSlideshow
         view.onJumpBackward = onJumpBackward
         view.onJumpForward = onJumpForward
         view.isCropActive = isCropActive
+        view.isColorAdjustmentActive = isColorAdjustmentActive
         view.isSlideshowPlaying = isSlideshowPlaying
         return view
     }
@@ -884,10 +964,12 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         nsView.onCopyToDestinationSlot = onCopyToDestinationSlot
         nsView.onCancelCrop = onCancelCrop
         nsView.onSaveCrop = onSaveCrop
+        nsView.onCancelColorAdjustments = onCancelColorAdjustments
         nsView.onToggleSlideshow = onToggleSlideshow
         nsView.onJumpBackward = onJumpBackward
         nsView.onJumpForward = onJumpForward
         nsView.isCropActive = isCropActive
+        nsView.isColorAdjustmentActive = isColorAdjustmentActive
         nsView.isSlideshowPlaying = isSlideshowPlaying
     }
 }
@@ -904,10 +986,12 @@ private final class KeyAwareView: NSView {
     var onCopyToDestinationSlot: ((Int) -> Void)?
     var onCancelCrop: (() -> Void)?
     var onSaveCrop: (() -> Void)?
+    var onCancelColorAdjustments: (() -> Void)?
     var onToggleSlideshow: (() -> Void)?
     var onJumpBackward: (() -> Void)?
     var onJumpForward: (() -> Void)?
     var isCropActive = false
+    var isColorAdjustmentActive = false
     var isSlideshowPlaying = false
 
     private var eventMonitor: Any?
@@ -950,6 +1034,15 @@ private final class KeyAwareView: NSView {
             }
 
             return event
+        }
+
+        if isColorAdjustmentActive {
+            switch event.keyCode {
+            case 53:
+                if modifiers.isEmpty { onCancelColorAdjustments?(); return nil }
+            default:
+                break
+            }
         }
 
         if let finderLabel = finderLabel(for: event.keyCode), modifiers == [.command, .option] {

@@ -6,6 +6,7 @@ struct XeeLiteApp: App {
     @StateObject private var zoomState = ZoomState()
     @StateObject private var slideshowState = SlideshowPlaybackState()
     @StateObject private var cropState = CropState()
+    @StateObject private var colorAdjustmentState = ColorAdjustmentState()
     @AppStorage("showsStatusBar") private var showsStatusBar = true
     @AppStorage("showsInspector") private var showsInspector = false
 
@@ -16,6 +17,7 @@ struct XeeLiteApp: App {
                 .environmentObject(zoomState)
                 .environmentObject(slideshowState)
                 .environmentObject(cropState)
+                .environmentObject(colorAdjustmentState)
                 .frame(minWidth: 720, minHeight: 520)
         }
         .commands {
@@ -158,6 +160,23 @@ struct XeeLiteApp: App {
                         .disabled(!cropState.isActive)
                     }
                 }
+            }
+
+            CommandMenu("Adjustments") {
+                Button(colorAdjustmentState.isActive ? "Hide Color Adjustments" : "Adjust Color…") {
+                    if colorAdjustmentState.isActive {
+                        colorAdjustmentState.deactivate()
+                    } else {
+                        colorAdjustmentState.requestActivate()
+                    }
+                }
+                .keyboardShortcut("c", modifiers: [.command, .option])
+                .disabled(!appState.canCropCurrentImage)
+
+                Button("Reset Color Adjustments") {
+                    colorAdjustmentState.reset()
+                }
+                .disabled(!colorAdjustmentState.isActive || !colorAdjustmentState.canReset)
             }
 
             CommandGroup(after: .toolbar) {
