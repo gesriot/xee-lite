@@ -62,6 +62,27 @@ struct XeeLiteApp: App {
                 }
             }
 
+            CommandMenu("Labels") {
+                Button(labelMenuTitle(for: .none)) {
+                    appState.setFinderLabel(.none)
+                }
+                .keyboardShortcut("0", modifiers: [.command, .option])
+                .disabled(!appState.canSetFinderLabel)
+
+                Divider()
+
+                ForEach(FinderLabel.coloredCases) { label in
+                    Button(labelMenuTitle(for: label)) {
+                        appState.setFinderLabel(label)
+                    }
+                    .keyboardShortcut(
+                        KeyEquivalent(label.keyboardCharacter),
+                        modifiers: [.command, .option]
+                    )
+                    .disabled(!appState.canSetFinderLabel)
+                }
+            }
+
             CommandGroup(after: .toolbar) {
                 Divider()
 
@@ -114,5 +135,13 @@ struct XeeLiteApp: App {
                 .disabled(!zoomState.hasImage)
             }
         }
+    }
+
+    private func labelMenuTitle(for label: FinderLabel) -> String {
+        if appState.currentImageFinderLabel == label {
+            return "✓ \(label.title)"
+        }
+
+        return label.title
     }
 }

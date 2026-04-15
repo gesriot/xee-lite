@@ -98,6 +98,7 @@ struct ImageViewerView: View {
                 onLast: appState.showLastImage,
                 onRename: appState.requestRenameCurrentImage,
                 onDelete: appState.requestDeleteCurrentImage,
+                onSetFinderLabel: appState.setFinderLabel(_:),
                 onMoveToDestinationSlot: appState.moveCurrentImage(toDestinationSlot:),
                 onCopyToDestinationSlot: appState.copyCurrentImage(toDestinationSlot:),
                 onJumpBackward: {
@@ -516,6 +517,7 @@ private struct KeyboardHandlerView: NSViewRepresentable {
     let onLast: () -> Void
     let onRename: () -> Void
     let onDelete: () -> Void
+    let onSetFinderLabel: (FinderLabel) -> Void
     let onMoveToDestinationSlot: (Int) -> Void
     let onCopyToDestinationSlot: (Int) -> Void
     let onJumpBackward: () -> Void
@@ -529,6 +531,7 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         view.onLast = onLast
         view.onRename = onRename
         view.onDelete = onDelete
+        view.onSetFinderLabel = onSetFinderLabel
         view.onMoveToDestinationSlot = onMoveToDestinationSlot
         view.onCopyToDestinationSlot = onCopyToDestinationSlot
         view.onJumpBackward = onJumpBackward
@@ -543,6 +546,7 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         nsView.onLast = onLast
         nsView.onRename = onRename
         nsView.onDelete = onDelete
+        nsView.onSetFinderLabel = onSetFinderLabel
         nsView.onMoveToDestinationSlot = onMoveToDestinationSlot
         nsView.onCopyToDestinationSlot = onCopyToDestinationSlot
         nsView.onJumpBackward = onJumpBackward
@@ -557,6 +561,7 @@ private final class KeyAwareView: NSView {
     var onLast: (() -> Void)?
     var onRename: (() -> Void)?
     var onDelete: (() -> Void)?
+    var onSetFinderLabel: ((FinderLabel) -> Void)?
     var onMoveToDestinationSlot: ((Int) -> Void)?
     var onCopyToDestinationSlot: ((Int) -> Void)?
     var onJumpBackward: (() -> Void)?
@@ -590,6 +595,11 @@ private final class KeyAwareView: NSView {
         guard window?.isKeyWindow == true else { return event }
 
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+
+        if let finderLabel = finderLabel(for: event.keyCode), modifiers == [.command, .option] {
+            onSetFinderLabel?(finderLabel)
+            return nil
+        }
 
         if let destinationSlot = destinationSlot(for: event.keyCode) {
             if modifiers.isEmpty {
@@ -639,6 +649,20 @@ private final class KeyAwareView: NSView {
         case 26: return 7
         case 28: return 8
         case 25: return 9
+        default: return nil
+        }
+    }
+
+    private func finderLabel(for keyCode: UInt16) -> FinderLabel? {
+        switch keyCode {
+        case 29: return FinderLabel.none
+        case 18: return .gray
+        case 19: return .green
+        case 20: return .purple
+        case 21: return .blue
+        case 23: return .yellow
+        case 22: return .red
+        case 26: return .orange
         default: return nil
         }
     }

@@ -12,6 +12,7 @@ final class AppState: ObservableObject {
     @Published private(set) var currentImageURL: URL?
     @Published private(set) var currentImagePixelSize: CGSize?
     @Published private(set) var currentImageFileSize: Int64?
+    @Published private(set) var currentImageFinderLabel: FinderLabel?
     @Published private(set) var currentMetadata = ImageMetadata(sections: [])
     @Published private(set) var currentAnimatedImage: AnimatedImage?
     @Published private(set) var renameRequestID: UInt64 = 0
@@ -134,6 +135,10 @@ final class AppState: ObservableObject {
         currentImageURL != nil
     }
 
+    var canSetFinderLabel: Bool {
+        currentImageURL != nil
+    }
+
     var currentImagePositionText: String? {
         guard imageURLs.indices.contains(currentIndex) else { return nil }
         return "\(currentIndex + 1)/\(imageURLs.count)"
@@ -189,6 +194,30 @@ final class AppState: ObservableObject {
         }
 
         trashImage(at: currentImageURL)
+    }
+
+    func setFinderLabel(_ label: FinderLabel) {
+        guard let currentImageURL = currentImageURL?.standardizedFileURL else {
+            presentAlert(
+                title: "Set Finder Label Failed",
+                message: FileTransferError.noImage.localizedDescription
+            )
+            return
+        }
+
+        do {
+            var resourceValues = URLResourceValues()
+            resourceValues.labelNumber = label.rawValue
+            var mutableURL = currentImageURL
+            try mutableURL.setResourceValues(resourceValues)
+            currentImageFinderLabel = label
+            presentFileActionMessage(label.appliedStatusMessage)
+        } catch {
+            presentAlert(
+                title: "Set Finder Label Failed",
+                message: error.localizedDescription
+            )
+        }
     }
 
     func renameValidationMessage(forBaseName baseName: String) -> String? {
@@ -251,6 +280,7 @@ final class AppState: ObservableObject {
             currentImageURL = nil
             currentImagePixelSize = nil
             currentImageFileSize = nil
+            currentImageFinderLabel = nil
             currentMetadata = ImageMetadata(sections: [])
             currentAnimatedImage = nil
             return
@@ -264,6 +294,7 @@ final class AppState: ObservableObject {
             currentImageURL = url
             currentImagePixelSize = nil
             currentImageFileSize = fileSize(for: url)
+            currentImageFinderLabel = finderLabel(for: url)
             currentMetadata = ImageMetadataLoader.load(from: url)
             currentAnimatedImage = animatedImage
             return
@@ -273,6 +304,7 @@ final class AppState: ObservableObject {
         currentImageURL = url
         currentImagePixelSize = animatedImage?.pixelSize ?? pixelSize(for: image)
         currentImageFileSize = fileSize(for: url)
+        currentImageFinderLabel = finderLabel(for: url)
         currentMetadata = ImageMetadataLoader.load(from: url)
         currentAnimatedImage = animatedImage
     }
@@ -287,12 +319,14 @@ final class AppState: ObservableObject {
             currentImage = image
             currentImagePixelSize = animatedImage?.pixelSize ?? pixelSize(for: image)
             currentImageFileSize = fileSize(for: url)
+            currentImageFinderLabel = finderLabel(for: url)
             currentMetadata = ImageMetadataLoader.load(from: url)
             currentAnimatedImage = animatedImage
         } else {
             currentImage = nil
             currentImagePixelSize = nil
             currentImageFileSize = fileSize(for: url)
+            currentImageFinderLabel = finderLabel(for: url)
             currentMetadata = ImageMetadataLoader.load(from: url)
             currentAnimatedImage = animatedImage
         }
@@ -321,6 +355,12 @@ final class AppState: ObservableObject {
         }
 
         return size.int64Value
+    }
+
+    private func finderLabel(for url: URL) -> FinderLabel {
+        let resourceValues = try? url.resourceValues(forKeys: [.labelNumberKey])
+        let labelNumber = resourceValues?.labelNumber ?? FinderLabel.none.rawValue
+        return FinderLabel(rawValue: labelNumber) ?? .none
     }
 
     private func performCurrentImageTransfer(_ action: FileTransferAction, toDestinationSlot slotNumber: Int) {
@@ -434,6 +474,7 @@ final class AppState: ObservableObject {
         currentImageURL = nil
         currentImagePixelSize = nil
         currentImageFileSize = nil
+        currentImageFinderLabel = nil
         currentMetadata = ImageMetadata(sections: [])
         currentAnimatedImage = nil
     }
