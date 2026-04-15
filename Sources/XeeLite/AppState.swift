@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class AppState: ObservableObject {
     private static let fileActionDestinationsDefaultsKey = "fileActionDestinations.v1"
+    private static var didConsumeLaunchImageArgument = false
 
     @Published private(set) var imageURLs: [URL] = []
     @Published private(set) var currentIndex: Int = 0
@@ -42,7 +43,9 @@ final class AppState: ObservableObject {
     }
 
     func loadInitialImage() {
-        if let path = CommandLine.arguments.dropFirst().first {
+        guard currentImageURL == nil, imageURLs.isEmpty else { return }
+
+        if let path = Self.consumeLaunchImageArgument() {
             loadImage(at: URL(fileURLWithPath: path))
             return
         }
@@ -575,6 +578,12 @@ final class AppState: ObservableObject {
         }
 
         return (1...9).compactMap { slotsByNumber[$0] }
+    }
+
+    private static func consumeLaunchImageArgument() -> String? {
+        guard !didConsumeLaunchImageArgument else { return nil }
+        didConsumeLaunchImageArgument = true
+        return CommandLine.arguments.dropFirst().first
     }
 
     private func renamedImageURL(forBaseName baseName: String, from currentURL: URL) throws -> URL {

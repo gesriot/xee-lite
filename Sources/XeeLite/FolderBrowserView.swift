@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct FolderBrowserView: View {
-    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var viewerCoordinator: ViewerCoordinator
     @StateObject private var browserState = FolderBrowserState()
     @StateObject private var thumbnailState = ThumbnailStripState()
 
@@ -30,9 +30,9 @@ struct FolderBrowserView: View {
         )
         .foregroundStyle(.white)
         .onAppear {
-            refreshBrowserData(using: appState.imageURLs)
+            refreshBrowserData(using: viewerCoordinator.browserImageURLs)
         }
-        .onChange(of: appState.imageURLs) { _, newURLs in
+        .onChange(of: viewerCoordinator.browserImageURLs) { _, newURLs in
             refreshBrowserData(using: newURLs)
         }
     }
@@ -75,7 +75,7 @@ struct FolderBrowserView: View {
 
     @ViewBuilder
     private var content: some View {
-        if appState.imageURLs.isEmpty {
+        if viewerCoordinator.browserImageURLs.isEmpty {
             emptyState(
                 title: "No Folder to Browse",
                 message: "Open an image in the viewer to populate the folder browser."
@@ -97,10 +97,10 @@ struct FolderBrowserView: View {
                         FolderBrowserCellView(
                             entry: entry,
                             thumbnail: thumbnailState.thumbnail(for: entry.url),
-                            isCurrentImage: entry.url.standardizedFileURL == appState.currentImageURL?.standardizedFileURL,
+                            isCurrentImage: entry.url.standardizedFileURL == viewerCoordinator.browserCurrentImageURL?.standardizedFileURL,
                             metadataText: metadataText(for: entry),
                             onOpen: {
-                                appState.openImageInViewer(at: entry.url)
+                                viewerCoordinator.openImageInBrowserSourceViewer(at: entry.url)
                             }
                         )
                             .onAppear {
@@ -147,14 +147,14 @@ struct FolderBrowserView: View {
     }
 
     private var currentFolderTitle: String {
-        let folderURL = appState.currentImageURL?.deletingLastPathComponent()
-            ?? appState.imageURLs.first?.deletingLastPathComponent()
+        let folderURL = viewerCoordinator.browserCurrentImageURL?.deletingLastPathComponent()
+            ?? viewerCoordinator.browserImageURLs.first?.deletingLastPathComponent()
 
         return folderURL?.lastPathComponent ?? "Folder Browser"
     }
 
     private var summaryText: String {
-        if appState.imageURLs.isEmpty {
+        if viewerCoordinator.browserImageURLs.isEmpty {
             return "Open an image in the main viewer first."
         }
 

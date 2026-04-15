@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 
 struct ImageViewerView: View {
+    @EnvironmentObject private var viewerCoordinator: ViewerCoordinator
+    @EnvironmentObject private var viewerSession: ViewerSession
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var zoomState: ZoomState
     @EnvironmentObject private var slideshowState: SlideshowPlaybackState
@@ -176,6 +178,14 @@ struct ImageViewerView: View {
             guard let resolvedWindow = matchingWindow(from: notification.object) else { return }
             updateZoomContext(for: resolvedWindow)
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+            guard let resolvedWindow = matchingWindow(from: notification.object) else { return }
+            viewerCoordinator.activate(viewerSession, window: resolvedWindow)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { notification in
+            guard let resolvedWindow = matchingWindow(from: notification.object) else { return }
+            viewerCoordinator.unregister(viewerSession, window: resolvedWindow)
+        }
     }
 
     private var interactionWrappedContent: some View {
@@ -216,15 +226,23 @@ struct ImageViewerView: View {
                 window = nsWindow
 
                 if isNewWindow {
+                    let pendingTabSourceWindow = viewerCoordinator.consumePendingTabSourceWindow(for: nsWindow)
                     appState.registerViewerWindow(nsWindow)
-                    configureWindow(nsWindow)
+                    configureWindow(nsWindow, tabSourceWindow: pendingTabSourceWindow)
                     updateWindowTitle(with: appState.currentImageURL)
+                    viewerCoordinator.activate(viewerSession, window: nsWindow)
+
+                    if let pendingTabSourceWindow {
+                        pendingTabSourceWindow.addTabbedWindow(nsWindow, ordered: .above)
+                        nsWindow.makeKeyAndOrderFront(nil)
+                    }
 
                     if slideshowState.isPlaying {
                         handleSlideshowPlaybackChange(isPlaying: true)
                     }
                 } else {
                     appState.registerViewerWindow(nsWindow)
+                    viewerCoordinator.activate(viewerSession, window: nsWindow)
                 }
 
                 isFullScreen = nsWindow.styleMask.contains(.fullScreen)
@@ -464,11 +482,16 @@ struct ImageViewerView: View {
         }
     }
 
-    private func configureWindow(_ window: NSWindow) {
+    private func configureWindow(_ window: NSWindow, tabSourceWindow: NSWindow?) {
+        NSWindow.allowsAutomaticWindowTabbing = true
+        window.tabbingMode = .preferred
+        window.tabbingIdentifier = viewerCoordinator.viewerTabbingIdentifier
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = false
 
-        if let screen = window.screen ?? NSScreen.main {
+        if let tabSourceWindow {
+            window.setFrame(tabSourceWindow.frame, display: true)
+        } else if let screen = window.screen ?? NSScreen.main {
             let frame = screen.visibleFrame
             window.setFrame(frame, display: true)
         } else {
