@@ -81,16 +81,12 @@ final class AppState: ObservableObject {
         }
     }
 
-    func showPreviousImage() {
-        guard canShowPrevious else { return }
-        currentIndex -= 1
-        updateDisplayedImage()
+    func showPreviousImage(wrapping: Bool = false) {
+        stepImage(by: -1, wrapping: wrapping)
     }
 
-    func showNextImage() {
-        guard canShowNext else { return }
-        currentIndex += 1
-        updateDisplayedImage()
+    func showNextImage(wrapping: Bool = false) {
+        stepImage(by: 1, wrapping: wrapping)
     }
 
     func showFirstImage() {
@@ -110,6 +106,28 @@ final class AppState: ObservableObject {
 
         let nextIndex = min(max(currentIndex + delta, 0), imageURLs.count - 1)
         guard nextIndex != currentIndex else { return }
+
+        currentIndex = nextIndex
+        updateDisplayedImage()
+    }
+
+    private func stepImage(by delta: Int, wrapping: Bool) {
+        guard !imageURLs.isEmpty, delta != 0 else { return }
+
+        if wrapping {
+            let imageCount = imageURLs.count
+            guard imageCount > 1 else { return }
+
+            let nextIndex = ((currentIndex + delta) % imageCount + imageCount) % imageCount
+            guard nextIndex != currentIndex else { return }
+
+            currentIndex = nextIndex
+            updateDisplayedImage()
+            return
+        }
+
+        let nextIndex = currentIndex + delta
+        guard imageURLs.indices.contains(nextIndex) else { return }
 
         currentIndex = nextIndex
         updateDisplayedImage()
@@ -137,6 +155,10 @@ final class AppState: ObservableObject {
 
     var canSetFinderLabel: Bool {
         currentImageURL != nil
+    }
+
+    var canRunSlideshow: Bool {
+        currentImageURL != nil && imageURLs.count > 1
     }
 
     var currentImagePositionText: String? {

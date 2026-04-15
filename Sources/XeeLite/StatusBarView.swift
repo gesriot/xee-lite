@@ -8,6 +8,7 @@ struct StatusBarView: View {
     let positionText: String?
     let zoomText: String
     let actionMessage: String?
+    let slideshowState: StatusBarSlideshowState?
     let animationState: StatusBarAnimationState?
     let isFullScreen: Bool
 
@@ -22,6 +23,38 @@ struct StatusBarView: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            if let slideshowState {
+                HStack(spacing: 4) {
+                    Button(action: slideshowState.onPreviousSlide) {
+                        Image(systemName: "backward.fill")
+                    }
+                    .help("Previous Slide")
+
+                    Button(action: slideshowState.onTogglePlayback) {
+                        Image(systemName: slideshowState.isPlaying ? "pause.fill" : "play.fill")
+                    }
+                    .help(slideshowState.isPlaying ? "Pause Slideshow" : "Start Slideshow")
+
+                    Button(action: slideshowState.onNextSlide) {
+                        Image(systemName: "forward.fill")
+                    }
+                    .help("Next Slide")
+
+                    Menu(slideshowState.intervalText) {
+                        ForEach(slideshowState.intervals, id: \.self) { interval in
+                            Button(intervalLabel(for: interval)) {
+                                slideshowState.onSelectInterval(interval)
+                            }
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
+                .buttonStyle(.plain)
+
+                separator
+            }
+
             if let animationState {
                 HStack(spacing: 4) {
                     Button(action: animationState.onStepBackward) {
@@ -135,6 +168,25 @@ struct StatusBarView: View {
 
         return "\(rate.formatted(.number.precision(.fractionLength(1))))x"
     }
+
+    private func intervalLabel(for interval: TimeInterval) -> String {
+        let rounded = interval.rounded()
+        if abs(interval - rounded) < 0.001 {
+            return "\(Int(rounded)) seconds"
+        }
+
+        return "\(interval.formatted(.number.precision(.fractionLength(1)))) seconds"
+    }
+}
+
+struct StatusBarSlideshowState {
+    let isPlaying: Bool
+    let intervalText: String
+    let intervals: [TimeInterval]
+    let onTogglePlayback: () -> Void
+    let onPreviousSlide: () -> Void
+    let onNextSlide: () -> Void
+    let onSelectInterval: (TimeInterval) -> Void
 }
 
 struct StatusBarAnimationState {

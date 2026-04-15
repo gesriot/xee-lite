@@ -4,6 +4,7 @@ import SwiftUI
 struct ImageViewerView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var zoomState: ZoomState
+    @EnvironmentObject private var slideshowState: SlideshowPlaybackState
     @AppStorage("showsStatusBar") private var showsStatusBar = true
     @AppStorage("showsInspector") private var showsInspector = false
     @StateObject private var animatedPlayback = AnimatedImagePlaybackState()
@@ -13,6 +14,7 @@ struct ImageViewerView: View {
     @State private var isFullScreen = false
     @State private var isChromeVisible = true
     @State private var autoHideWorkItem: DispatchWorkItem?
+    @State private var slideshowDirection: SlideshowTransitionDirection = .forward
     private let fullScreenChromeInset: CGFloat = 10
     private let fullScreenAutoHideDelay: TimeInterval = 1.8
     private let inspectorWidth: CGFloat = 300
@@ -33,6 +35,11 @@ struct ImageViewerView: View {
             appState.loadInitialImage()
             zoomState.updateImagePixelSize(appState.currentImagePixelSize)
             animatedPlayback.setAnimatedImage(appState.currentAnimatedImage)
+            slideshowState.onAdvance = advanceSlideshow
+        }
+        .onDisappear {
+            slideshowState.onAdvance = nil
+            slideshowState.pause()
         }
         .onChange(of: appState.currentImageURL) { _, newURL in
             updateWindowTitle(with: newURL)
@@ -49,6 +56,14 @@ struct ImageViewerView: View {
         }
         .onChange(of: appState.deleteRequestID) { _, _ in
             presentDeleteConfirmationIfPossible()
+        }
+        .onChange(of: appState.imageURLs.count) { _, newCount in
+            if newCount < 2 {
+                slideshowState.pause()
+            }
+        }
+        .onChange(of: slideshowState.isPlaying) { _, isPlaying in
+            handleSlideshowPlaybackChange(isPlaying: isPlaying)
         }
     }
 
@@ -92,21 +107,23 @@ struct ImageViewerView: View {
         windowObservedContent
         .background {
             KeyboardHandlerView(
-                onPrevious: appState.showPreviousImage,
-                onNext: appState.showNextImage,
-                onFirst: appState.showFirstImage,
-                onLast: appState.showLastImage,
+                onPrevious: showPreviousImage,
+                onNext: showNextImage,
+                onFirst: showFirstImage,
+                onLast: showLastImage,
                 onRename: appState.requestRenameCurrentImage,
                 onDelete: appState.requestDeleteCurrentImage,
                 onSetFinderLabel: appState.setFinderLabel(_:),
                 onMoveToDestinationSlot: appState.moveCurrentImage(toDestinationSlot:),
                 onCopyToDestinationSlot: appState.copyCurrentImage(toDestinationSlot:),
+                onToggleSlideshow: toggleSlideshowFromKeyboard,
                 onJumpBackward: {
-                    appState.jumpImages(by: -10)
+                    jumpImages(by: -10)
                 },
                 onJumpForward: {
-                    appState.jumpImages(by: 10)
-                }
+                    jumpImages(by: 10)
+                },
+                isSlideshowPlaying: slideshowState.isPlaying
             )
         }
         .background {
@@ -117,6 +134,10 @@ struct ImageViewerView: View {
                 if isNewWindow {
                     configureWindow(nsWindow)
                     updateWindowTitle(with: appState.currentImageURL)
+
+                    if slideshowState.isPlaying {
+                        handleSlideshowPlaybackChange(isPlaying: true)
+                    }
                 }
 
                 isFullScreen = nsWindow.styleMask.contains(.fullScreen)
@@ -187,7 +208,7 @@ struct ImageViewerView: View {
         HStack(spacing: 0) {
             viewerContent
 
-            if showsInspector {
+            if showsInspector, !slideshowState.isPlaying {
                 MetadataInspectorView(
                     metadata: appState.currentMetadata,
                     isFullScreen: isFullScreen
@@ -210,25 +231,13 @@ struct ImageViewerView: View {
             if let foregroundImage = displayedImage {
                 GeometryReader { proxy in
                     ZStack {
-                        // Use a blurred version of the same image as a backdrop so
-                        // the main image can stay fully visible without black bars.
-                        if let backgroundImage = backgroundImage {
-                            Image(nsImage: backgroundImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: proxy.size.width, height: proxy.size.height)
-                                .blur(radius: 24)
-                                .opacity(0.75)
-                                .clipped()
-                        }
-
-                        Image(nsImage: foregroundImage)
-                            .resizable()
-                            .frame(
-                                width: max(zoomState.displayedImageSize.width, 1),
-                                height: max(zoomState.displayedImageSize.height, 1)
-                            )
-                            .offset(zoomState.offset)
+                        slideImageCanvas(
+                            foregroundImage: foregroundImage,
+                            backgroundImage: backgroundImage,
+                            viewportSize: proxy.size
+                        )
+                        .id(slideIdentity)
+                        .transition(slideshowTransition)
                     }
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
@@ -291,6 +300,7 @@ struct ImageViewerView: View {
             positionText: appState.currentImagePositionText,
             zoomText: zoomState.statusText,
             actionMessage: appState.fileActionMessage,
+            slideshowState: slideshowStatusBarState,
             animationState: animatedStatusBarState,
             isFullScreen: isFullScreen
         )
@@ -370,7 +380,7 @@ struct ImageViewerView: View {
     }
 
     private var currentInspectorWidth: CGFloat {
-        showsInspector ? inspectorWidth : 0
+        showsInspector && !slideshowState.isPlaying ? inspectorWidth : 0
     }
 
     private var displayedImage: NSImage? {
@@ -379,6 +389,48 @@ struct ImageViewerView: View {
 
     private var backgroundImage: NSImage? {
         appState.currentImage ?? displayedImage
+    }
+
+    private var slideIdentity: String {
+        appState.currentImageURL?.standardizedFileURL.path ?? "no-image"
+    }
+
+    private var slideshowTransition: AnyTransition {
+        slideshowState.transitionStyle.transition(for: slideshowDirection)
+    }
+
+    private var slideshowAnimation: Animation {
+        .easeInOut(duration: 0.28)
+    }
+
+    private var slideshowStatusBarState: StatusBarSlideshowState? {
+        guard appState.currentImageURL != nil, appState.imageURLs.count > 1 else { return nil }
+
+        return StatusBarSlideshowState(
+            isPlaying: slideshowState.isPlaying,
+            intervalText: slideshowState.intervalText,
+            intervals: slideshowState.availableIntervals,
+            onTogglePlayback: {
+                registerUserActivity()
+                slideshowState.togglePlayback()
+            },
+            onPreviousSlide: {
+                registerUserActivity()
+                navigateSlide(direction: .backward, wrapping: true, animated: true) {
+                    appState.showPreviousImage(wrapping: true)
+                }
+            },
+            onNextSlide: {
+                registerUserActivity()
+                navigateSlide(direction: .forward, wrapping: true, animated: true) {
+                    appState.showNextImage(wrapping: true)
+                }
+            },
+            onSelectInterval: { interval in
+                registerUserActivity()
+                slideshowState.setInterval(interval)
+            }
+        )
     }
 
     private var animatedStatusBarState: StatusBarAnimationState? {
@@ -408,6 +460,102 @@ struct ImageViewerView: View {
         )
     }
 
+    @ViewBuilder
+    private func slideImageCanvas(
+        foregroundImage: NSImage,
+        backgroundImage: NSImage?,
+        viewportSize: CGSize
+    ) -> some View {
+        // Keep a blurred poster behind the main image so transparent or tall/narrow
+        // images still fill the canvas while the actual slide stays fully readable.
+        if let backgroundImage {
+            Image(nsImage: backgroundImage)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: viewportSize.width, height: viewportSize.height)
+                .blur(radius: 24)
+                .opacity(0.75)
+                .clipped()
+        }
+
+        Image(nsImage: foregroundImage)
+            .resizable()
+            .frame(
+                width: max(zoomState.displayedImageSize.width, 1),
+                height: max(zoomState.displayedImageSize.height, 1)
+            )
+            .offset(zoomState.offset)
+    }
+
+    private func showPreviousImage() {
+        navigateSlide(direction: .backward, wrapping: false, animated: slideshowState.isPlaying) {
+            appState.showPreviousImage()
+        }
+    }
+
+    private func showNextImage() {
+        navigateSlide(direction: .forward, wrapping: false, animated: slideshowState.isPlaying) {
+            appState.showNextImage()
+        }
+    }
+
+    private func showFirstImage() {
+        navigateSlide(direction: .backward, wrapping: false, animated: slideshowState.isPlaying) {
+            appState.showFirstImage()
+        }
+    }
+
+    private func showLastImage() {
+        navigateSlide(direction: .forward, wrapping: false, animated: slideshowState.isPlaying) {
+            appState.showLastImage()
+        }
+    }
+
+    private func jumpImages(by delta: Int) {
+        guard delta != 0 else { return }
+
+        navigateSlide(
+            direction: delta > 0 ? .forward : .backward,
+            wrapping: false,
+            animated: slideshowState.isPlaying
+        ) {
+            appState.jumpImages(by: delta)
+        }
+    }
+
+    private func advanceSlideshow() {
+        navigateSlide(direction: .forward, wrapping: true, animated: true) {
+            appState.showNextImage(wrapping: true)
+        }
+    }
+
+    private func toggleSlideshowFromKeyboard() {
+        guard slideshowState.isPlaying || appState.canRunSlideshow else { return }
+        registerUserActivity()
+        slideshowState.togglePlayback()
+    }
+
+    private func navigateSlide(
+        direction: SlideshowTransitionDirection,
+        wrapping: Bool,
+        animated: Bool,
+        action: () -> Void
+    ) {
+        slideshowDirection = direction
+
+        if animated {
+            withAnimation(slideshowAnimation) {
+                action()
+            }
+        } else {
+            action()
+        }
+
+        if wrapping, appState.currentImageURL == nil {
+            slideshowState.pause()
+        }
+    }
+
     private func toggleFullScreen() {
         registerUserActivity()
         window?.toggleFullScreen(nil)
@@ -424,6 +572,33 @@ struct ImageViewerView: View {
 
         if isFullScreen {
             registerUserActivity()
+        } else {
+            if slideshowState.isPlaying {
+                slideshowState.pause()
+            }
+            cancelAutoHide()
+            isChromeVisible = true
+        }
+    }
+
+    private func handleSlideshowPlaybackChange(isPlaying: Bool) {
+        guard let window else { return }
+
+        updateZoomContext(for: window)
+
+        if isPlaying {
+            guard appState.canRunSlideshow else {
+                slideshowState.pause()
+                return
+            }
+
+            zoomState.fitOnScreen()
+
+            if !window.styleMask.contains(.fullScreen) {
+                window.toggleFullScreen(nil)
+            } else {
+                registerUserActivity()
+            }
         } else {
             cancelAutoHide()
             isChromeVisible = true
@@ -520,8 +695,10 @@ private struct KeyboardHandlerView: NSViewRepresentable {
     let onSetFinderLabel: (FinderLabel) -> Void
     let onMoveToDestinationSlot: (Int) -> Void
     let onCopyToDestinationSlot: (Int) -> Void
+    let onToggleSlideshow: () -> Void
     let onJumpBackward: () -> Void
     let onJumpForward: () -> Void
+    let isSlideshowPlaying: Bool
 
     func makeNSView(context: Context) -> KeyAwareView {
         let view = KeyAwareView()
@@ -534,8 +711,10 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         view.onSetFinderLabel = onSetFinderLabel
         view.onMoveToDestinationSlot = onMoveToDestinationSlot
         view.onCopyToDestinationSlot = onCopyToDestinationSlot
+        view.onToggleSlideshow = onToggleSlideshow
         view.onJumpBackward = onJumpBackward
         view.onJumpForward = onJumpForward
+        view.isSlideshowPlaying = isSlideshowPlaying
         return view
     }
 
@@ -549,8 +728,10 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         nsView.onSetFinderLabel = onSetFinderLabel
         nsView.onMoveToDestinationSlot = onMoveToDestinationSlot
         nsView.onCopyToDestinationSlot = onCopyToDestinationSlot
+        nsView.onToggleSlideshow = onToggleSlideshow
         nsView.onJumpBackward = onJumpBackward
         nsView.onJumpForward = onJumpForward
+        nsView.isSlideshowPlaying = isSlideshowPlaying
     }
 }
 
@@ -564,8 +745,10 @@ private final class KeyAwareView: NSView {
     var onSetFinderLabel: ((FinderLabel) -> Void)?
     var onMoveToDestinationSlot: ((Int) -> Void)?
     var onCopyToDestinationSlot: ((Int) -> Void)?
+    var onToggleSlideshow: (() -> Void)?
     var onJumpBackward: (() -> Void)?
     var onJumpForward: (() -> Void)?
+    var isSlideshowPlaying = false
 
     private var eventMonitor: Any?
 
@@ -614,6 +797,10 @@ private final class KeyAwareView: NSView {
         }
 
         switch event.keyCode {
+        case 1:
+            if modifiers == [.command, .option] { onToggleSlideshow?(); return nil }
+        case 53:
+            if modifiers.isEmpty, isSlideshowPlaying { onToggleSlideshow?(); return nil }
         case 123:
             if modifiers == [.command] { onJumpBackward?(); return nil }
             if modifiers.isEmpty { onPrevious?(); return nil }

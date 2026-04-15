@@ -4,6 +4,7 @@ import SwiftUI
 struct XeeLiteApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var zoomState = ZoomState()
+    @StateObject private var slideshowState = SlideshowPlaybackState()
     @AppStorage("showsStatusBar") private var showsStatusBar = true
     @AppStorage("showsInspector") private var showsInspector = false
 
@@ -12,6 +13,7 @@ struct XeeLiteApp: App {
             ImageViewerView()
                 .environmentObject(appState)
                 .environmentObject(zoomState)
+                .environmentObject(slideshowState)
                 .frame(minWidth: 720, minHeight: 520)
         }
         .commands {
@@ -83,6 +85,43 @@ struct XeeLiteApp: App {
                 }
             }
 
+            CommandMenu("Slideshow") {
+                Button(slideshowState.playbackButtonTitle) {
+                    slideshowState.togglePlayback()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .option])
+                .disabled(!appState.canRunSlideshow)
+
+                Button("Previous Slide") {
+                    appState.showPreviousImage(wrapping: true)
+                }
+                .disabled(!appState.canRunSlideshow)
+
+                Button("Next Slide") {
+                    appState.showNextImage(wrapping: true)
+                }
+                .disabled(!appState.canRunSlideshow)
+
+                Divider()
+
+                Menu("Interval") {
+                    ForEach(slideshowState.availableIntervals, id: \.self) { interval in
+                        Button(intervalMenuTitle(for: interval)) {
+                            slideshowState.setInterval(interval)
+                        }
+                        .disabled(!appState.canRunSlideshow)
+                    }
+                }
+
+                Menu("Transition") {
+                    ForEach(SlideshowTransitionStyle.allCases) { style in
+                        Button(transitionMenuTitle(for: style)) {
+                            slideshowState.setTransitionStyle(style)
+                        }
+                    }
+                }
+            }
+
             CommandGroup(after: .toolbar) {
                 Divider()
 
@@ -143,5 +182,29 @@ struct XeeLiteApp: App {
         }
 
         return label.title
+    }
+
+    private func intervalMenuTitle(for interval: TimeInterval) -> String {
+        let rounded = interval.rounded()
+        let label: String
+        if abs(interval - rounded) < 0.001 {
+            label = "\(Int(rounded)) seconds"
+        } else {
+            label = "\(interval.formatted(.number.precision(.fractionLength(1)))) seconds"
+        }
+
+        if abs(slideshowState.interval - interval) < 0.001 {
+            return "✓ \(label)"
+        }
+
+        return label
+    }
+
+    private func transitionMenuTitle(for style: SlideshowTransitionStyle) -> String {
+        if slideshowState.transitionStyle == style {
+            return "✓ \(style.title)"
+        }
+
+        return style.title
     }
 }
