@@ -161,6 +161,10 @@ final class AppState: ObservableObject {
         currentImageURL != nil && imageURLs.count > 1
     }
 
+    var canCropCurrentImage: Bool {
+        currentImageURL != nil && currentImagePixelSize != nil
+    }
+
     var currentImagePositionText: String? {
         guard imageURLs.indices.contains(currentIndex) else { return nil }
         return "\(currentIndex + 1)/\(imageURLs.count)"
@@ -259,6 +263,14 @@ final class AppState: ObservableObject {
         } catch {
             return error.localizedDescription
         }
+    }
+
+    func showErrorAlert(title: String, message: String) {
+        presentAlert(title: title, message: message)
+    }
+
+    func showFileActionMessage(_ message: String) {
+        presentFileActionMessage(message)
     }
 
     func renameCurrentImage(toBaseName baseName: String) throws {

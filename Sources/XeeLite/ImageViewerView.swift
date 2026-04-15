@@ -5,6 +5,7 @@ struct ImageViewerView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var zoomState: ZoomState
     @EnvironmentObject private var slideshowState: SlideshowPlaybackState
+    @EnvironmentObject private var cropState: CropState
     @AppStorage("showsStatusBar") private var showsStatusBar = true
     @AppStorage("showsInspector") private var showsInspector = false
     @StateObject private var animatedPlayback = AnimatedImagePlaybackState()
@@ -44,6 +45,9 @@ struct ImageViewerView: View {
         .onChange(of: appState.currentImageURL) { _, newURL in
             updateWindowTitle(with: newURL)
             animatedPlayback.setAnimatedImage(appState.currentAnimatedImage)
+            if cropState.isActive {
+                cropState.deactivate()
+            }
         }
         .onChange(of: appState.currentImagePixelSize) { _, newSize in
             zoomState.updateImagePixelSize(newSize)
@@ -57,6 +61,15 @@ struct ImageViewerView: View {
         .onChange(of: appState.deleteRequestID) { _, _ in
             presentDeleteConfirmationIfPossible()
         }
+        .onChange(of: cropState.activateRequestID) { _, _ in
+            startCrop()
+        }
+        .onChange(of: cropState.saveRequestID) { _, _ in
+            saveCrop(mode: .overwriteOriginal)
+        }
+        .onChange(of: cropState.saveAsRequestID) { _, _ in
+            saveCrop(mode: .saveAs)
+        }
         .onChange(of: appState.imageURLs.count) { _, newCount in
             if newCount < 2 {
                 slideshowState.pause()
@@ -64,6 +77,9 @@ struct ImageViewerView: View {
         }
         .onChange(of: slideshowState.isPlaying) { _, isPlaying in
             handleSlideshowPlaybackChange(isPlaying: isPlaying)
+        }
+        .onChange(of: cropState.isActive) { _, isActive in
+            handleCropModeChange(isActive: isActive)
         }
     }
 
@@ -116,6 +132,10 @@ struct ImageViewerView: View {
                 onSetFinderLabel: appState.setFinderLabel(_:),
                 onMoveToDestinationSlot: appState.moveCurrentImage(toDestinationSlot:),
                 onCopyToDestinationSlot: appState.copyCurrentImage(toDestinationSlot:),
+                onCancelCrop: cancelCrop,
+                onSaveCrop: {
+                    cropState.requestSave()
+                },
                 onToggleSlideshow: toggleSlideshowFromKeyboard,
                 onJumpBackward: {
                     jumpImages(by: -10)
@@ -123,6 +143,7 @@ struct ImageViewerView: View {
                 onJumpForward: {
                     jumpImages(by: 10)
                 },
+                isCropActive: cropState.isActive,
                 isSlideshowPlaying: slideshowState.isPlaying
             )
         }
@@ -208,7 +229,7 @@ struct ImageViewerView: View {
         HStack(spacing: 0) {
             viewerContent
 
-            if showsInspector, !slideshowState.isPlaying {
+            if showsInspector, !slideshowState.isPlaying, !cropState.isActive {
                 MetadataInspectorView(
                     metadata: appState.currentMetadata,
                     isFullScreen: isFullScreen
@@ -242,31 +263,39 @@ struct ImageViewerView: View {
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
                     .overlay {
-                        ImageInteractionView(
-                            onWheelZoom: { deltaY, anchor in
-                                zoomState.handleWheelZoom(deltaY: deltaY, anchor: anchor)
-                            },
-                            onMagnify: { delta, anchor in
-                                zoomState.handleMagnify(delta: delta, anchor: anchor)
-                            },
-                            onDoubleClick: { anchor in
-                                if zoomState.containsDisplayedImage(point: anchor) {
-                                    zoomState.toggleFitAndActualSize(anchor: anchor)
-                                } else {
-                                    toggleFullScreen()
+                        if cropState.isActive {
+                            CropOverlayView(
+                                cropState: cropState,
+                                viewportSize: proxy.size,
+                                onPointerActivity: registerUserActivity
+                            )
+                        } else {
+                            ImageInteractionView(
+                                onWheelZoom: { deltaY, anchor in
+                                    zoomState.handleWheelZoom(deltaY: deltaY, anchor: anchor)
+                                },
+                                onMagnify: { delta, anchor in
+                                    zoomState.handleMagnify(delta: delta, anchor: anchor)
+                                },
+                                onDoubleClick: { anchor in
+                                    if zoomState.containsDisplayedImage(point: anchor) {
+                                        zoomState.toggleFitAndActualSize(anchor: anchor)
+                                    } else {
+                                        toggleFullScreen()
+                                    }
+                                },
+                                onPointerActivity: registerUserActivity,
+                                onPanStart: {
+                                    zoomState.beginPan()
+                                },
+                                onPanChange: { translation in
+                                    zoomState.updatePan(translation: translation)
+                                },
+                                onPanEnd: {
+                                    zoomState.endPan()
                                 }
-                            },
-                            onPointerActivity: registerUserActivity,
-                            onPanStart: {
-                                zoomState.beginPan()
-                            },
-                            onPanChange: { translation in
-                                zoomState.updatePan(translation: translation)
-                            },
-                            onPanEnd: {
-                                zoomState.endPan()
-                            }
-                        )
+                            )
+                        }
                     }
                     .onAppear {
                         zoomState.updateViewportSize(proxy.size)
@@ -300,8 +329,9 @@ struct ImageViewerView: View {
             positionText: appState.currentImagePositionText,
             zoomText: zoomState.statusText,
             actionMessage: appState.fileActionMessage,
-            slideshowState: slideshowStatusBarState,
-            animationState: animatedStatusBarState,
+            cropState: cropStatusBarState,
+            slideshowState: cropState.isActive ? nil : slideshowStatusBarState,
+            animationState: cropState.isActive ? nil : animatedStatusBarState,
             isFullScreen: isFullScreen
         )
         .onHover { hovering in
@@ -380,7 +410,7 @@ struct ImageViewerView: View {
     }
 
     private var currentInspectorWidth: CGFloat {
-        showsInspector && !slideshowState.isPlaying ? inspectorWidth : 0
+        showsInspector && !slideshowState.isPlaying && !cropState.isActive ? inspectorWidth : 0
     }
 
     private var displayedImage: NSImage? {
@@ -393,6 +423,42 @@ struct ImageViewerView: View {
 
     private var slideIdentity: String {
         appState.currentImageURL?.standardizedFileURL.path ?? "no-image"
+    }
+
+    private var canSaveCropInPlace: Bool {
+        guard let currentImageURL = appState.currentImageURL else { return false }
+
+        return cropState.canSaveSelection
+            && CropExporter.canOverwrite(
+                url: currentImageURL,
+                isAnimatedSource: appState.currentAnimatedImage?.isAnimated ?? false
+            )
+    }
+
+    private var cropStatusBarState: StatusBarCropState? {
+        guard cropState.isActive else { return nil }
+
+        return StatusBarCropState(
+            aspectRatioPreset: cropState.aspectRatioPreset,
+            selectionText: cropState.selectionText,
+            canSaveInPlace: canSaveCropInPlace,
+            canSaveAs: cropState.canSaveSelection && appState.canCropCurrentImage,
+            onSelectAspectRatio: { preset in
+                registerUserActivity()
+                cropState.setAspectRatioPreset(preset, imagePixelSize: appState.currentImagePixelSize)
+            },
+            onSave: {
+                registerUserActivity()
+                cropState.requestSave()
+            },
+            onSaveAs: {
+                registerUserActivity()
+                cropState.requestSaveAs()
+            },
+            onCancel: {
+                cancelCrop()
+            }
+        )
     }
 
     private var slideshowTransition: AnyTransition {
@@ -530,9 +596,71 @@ struct ImageViewerView: View {
     }
 
     private func toggleSlideshowFromKeyboard() {
+        guard !cropState.isActive else { return }
         guard slideshowState.isPlaying || appState.canRunSlideshow else { return }
         registerUserActivity()
         slideshowState.togglePlayback()
+    }
+
+    private func startCrop() {
+        guard appState.canCropCurrentImage else { return }
+
+        if slideshowState.isPlaying {
+            slideshowState.pause()
+        }
+
+        if animatedPlayback.isPlaying {
+            animatedPlayback.togglePlayback()
+        }
+
+        if cropState.isActive {
+            cropState.deactivate()
+        }
+
+        cropState.activate(imagePixelSize: appState.currentImagePixelSize)
+    }
+
+    private func cancelCrop() {
+        registerUserActivity()
+        cropState.deactivate()
+    }
+
+    private func saveCrop(mode: CropSaveMode) {
+        guard
+            cropState.isActive,
+            let sourceImage = displayedImage,
+            let sourcePixelSize = appState.currentImagePixelSize,
+            let selectionRect = cropState.normalizedSelectionRect
+        else {
+            return
+        }
+
+        do {
+            let destinationURL = try CropExporter.saveCroppedImage(
+                from: sourceImage,
+                sourcePixelSize: sourcePixelSize,
+                cropRect: selectionRect,
+                originalURL: appState.currentImageURL,
+                isAnimatedSource: appState.currentAnimatedImage?.isAnimated ?? false,
+                mode: mode
+            )
+
+            cropState.deactivate()
+            appState.loadImage(at: destinationURL)
+
+            switch mode {
+            case .overwriteOriginal:
+                appState.showFileActionMessage("Cropped and saved")
+            case .saveAs:
+                appState.showFileActionMessage("Saved cropped copy")
+            }
+        } catch let error as LocalizedError {
+            if let description = error.errorDescription {
+                appState.showErrorAlert(title: "Crop Failed", message: description)
+            }
+        } catch {
+            appState.showErrorAlert(title: "Crop Failed", message: error.localizedDescription)
+        }
     }
 
     private func navigateSlide(
@@ -592,6 +720,10 @@ struct ImageViewerView: View {
                 return
             }
 
+            if cropState.isActive {
+                cropState.deactivate()
+            }
+
             zoomState.fitOnScreen()
 
             if !window.styleMask.contains(.fullScreen) {
@@ -602,6 +734,22 @@ struct ImageViewerView: View {
         } else {
             cancelAutoHide()
             isChromeVisible = true
+        }
+    }
+
+    private func handleCropModeChange(isActive: Bool) {
+        if let window {
+            updateZoomContext(for: window)
+
+            if zoomState.mode == .fitOnScreen, !window.styleMask.contains(.fullScreen) {
+                resizeWindowForFitOnScreen(window)
+            }
+        }
+
+        if isActive {
+            cancelAutoHide()
+            isChromeVisible = true
+            registerUserActivity()
         }
     }
 
@@ -695,9 +843,12 @@ private struct KeyboardHandlerView: NSViewRepresentable {
     let onSetFinderLabel: (FinderLabel) -> Void
     let onMoveToDestinationSlot: (Int) -> Void
     let onCopyToDestinationSlot: (Int) -> Void
+    let onCancelCrop: () -> Void
+    let onSaveCrop: () -> Void
     let onToggleSlideshow: () -> Void
     let onJumpBackward: () -> Void
     let onJumpForward: () -> Void
+    let isCropActive: Bool
     let isSlideshowPlaying: Bool
 
     func makeNSView(context: Context) -> KeyAwareView {
@@ -711,9 +862,12 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         view.onSetFinderLabel = onSetFinderLabel
         view.onMoveToDestinationSlot = onMoveToDestinationSlot
         view.onCopyToDestinationSlot = onCopyToDestinationSlot
+        view.onCancelCrop = onCancelCrop
+        view.onSaveCrop = onSaveCrop
         view.onToggleSlideshow = onToggleSlideshow
         view.onJumpBackward = onJumpBackward
         view.onJumpForward = onJumpForward
+        view.isCropActive = isCropActive
         view.isSlideshowPlaying = isSlideshowPlaying
         return view
     }
@@ -728,9 +882,12 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         nsView.onSetFinderLabel = onSetFinderLabel
         nsView.onMoveToDestinationSlot = onMoveToDestinationSlot
         nsView.onCopyToDestinationSlot = onCopyToDestinationSlot
+        nsView.onCancelCrop = onCancelCrop
+        nsView.onSaveCrop = onSaveCrop
         nsView.onToggleSlideshow = onToggleSlideshow
         nsView.onJumpBackward = onJumpBackward
         nsView.onJumpForward = onJumpForward
+        nsView.isCropActive = isCropActive
         nsView.isSlideshowPlaying = isSlideshowPlaying
     }
 }
@@ -745,9 +902,12 @@ private final class KeyAwareView: NSView {
     var onSetFinderLabel: ((FinderLabel) -> Void)?
     var onMoveToDestinationSlot: ((Int) -> Void)?
     var onCopyToDestinationSlot: ((Int) -> Void)?
+    var onCancelCrop: (() -> Void)?
+    var onSaveCrop: (() -> Void)?
     var onToggleSlideshow: (() -> Void)?
     var onJumpBackward: (() -> Void)?
     var onJumpForward: (() -> Void)?
+    var isCropActive = false
     var isSlideshowPlaying = false
 
     private var eventMonitor: Any?
@@ -778,6 +938,19 @@ private final class KeyAwareView: NSView {
         guard window?.isKeyWindow == true else { return event }
 
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+
+        if isCropActive {
+            switch event.keyCode {
+            case 53:
+                if modifiers.isEmpty { onCancelCrop?(); return nil }
+            case 36, 76:
+                if modifiers.isEmpty { onSaveCrop?(); return nil }
+            default:
+                break
+            }
+
+            return event
+        }
 
         if let finderLabel = finderLabel(for: event.keyCode), modifiers == [.command, .option] {
             onSetFinderLabel?(finderLabel)

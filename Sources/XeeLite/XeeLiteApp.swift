@@ -5,6 +5,7 @@ struct XeeLiteApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var zoomState = ZoomState()
     @StateObject private var slideshowState = SlideshowPlaybackState()
+    @StateObject private var cropState = CropState()
     @AppStorage("showsStatusBar") private var showsStatusBar = true
     @AppStorage("showsInspector") private var showsInspector = false
 
@@ -14,6 +15,7 @@ struct XeeLiteApp: App {
                 .environmentObject(appState)
                 .environmentObject(zoomState)
                 .environmentObject(slideshowState)
+                .environmentObject(cropState)
                 .frame(minWidth: 720, minHeight: 520)
         }
         .commands {
@@ -122,6 +124,42 @@ struct XeeLiteApp: App {
                 }
             }
 
+            CommandMenu("Crop") {
+                Button(cropState.isActive ? "Reset Crop" : "Crop") {
+                    cropState.requestActivate()
+                }
+                .keyboardShortcut("k", modifiers: [.command])
+                .disabled(!appState.canCropCurrentImage)
+
+                Button("Save Crop") {
+                    cropState.requestSave()
+                }
+                .keyboardShortcut("s", modifiers: [.command])
+                .disabled(!canSaveCropInPlace)
+
+                Button("Save Crop As…") {
+                    cropState.requestSaveAs()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(!canSaveCropAs)
+
+                Button("Cancel Crop") {
+                    cropState.deactivate()
+                }
+                .disabled(!cropState.isActive)
+
+                Divider()
+
+                Menu("Aspect Ratio") {
+                    ForEach(CropAspectRatioPreset.allCases) { preset in
+                        Button(aspectRatioMenuTitle(for: preset)) {
+                            cropState.setAspectRatioPreset(preset, imagePixelSize: appState.currentImagePixelSize)
+                        }
+                        .disabled(!cropState.isActive)
+                    }
+                }
+            }
+
             CommandGroup(after: .toolbar) {
                 Divider()
 
@@ -206,5 +244,26 @@ struct XeeLiteApp: App {
         }
 
         return style.title
+    }
+
+    private var canSaveCropInPlace: Bool {
+        guard cropState.canSaveSelection, let currentImageURL = appState.currentImageURL else { return false }
+
+        return CropExporter.canOverwrite(
+            url: currentImageURL,
+            isAnimatedSource: appState.currentAnimatedImage?.isAnimated ?? false
+        )
+    }
+
+    private var canSaveCropAs: Bool {
+        cropState.canSaveSelection && appState.canCropCurrentImage
+    }
+
+    private func aspectRatioMenuTitle(for preset: CropAspectRatioPreset) -> String {
+        if cropState.aspectRatioPreset == preset {
+            return "✓ \(preset.title)"
+        }
+
+        return preset.title
     }
 }

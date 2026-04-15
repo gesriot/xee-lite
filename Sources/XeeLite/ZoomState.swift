@@ -33,6 +33,22 @@ final class ZoomState: ObservableObject {
         displaySize(for: scale)
     }
 
+    var displayedImageRect: CGRect {
+        guard hasImage else { return .zero }
+
+        let imageSize = displayedImageSize
+        return CGRect(
+            x: (viewportSize.width - imageSize.width) / 2 + offset.width,
+            y: (viewportSize.height - imageSize.height) / 2 + offset.height,
+            width: imageSize.width,
+            height: imageSize.height
+        )
+    }
+
+    var currentImagePixelSize: CGSize? {
+        hasImage ? imagePixelSize : nil
+    }
+
     var isAtActualSize: Bool {
         mode == .actualSize
     }
@@ -250,17 +266,47 @@ final class ZoomState: ObservableObject {
     }
 
     func containsDisplayedImage(point: CGPoint) -> Bool {
-        guard hasImage else { return false }
+        displayedImageRect.contains(point)
+    }
 
-        let imageSize = displayedImageSize
-        let imageRect = CGRect(
-            x: (viewportSize.width - imageSize.width) / 2 + offset.width,
-            y: (viewportSize.height - imageSize.height) / 2 + offset.height,
-            width: imageSize.width,
-            height: imageSize.height
+    func imagePixelPoint(forViewportPoint point: CGPoint) -> CGPoint? {
+        guard containsDisplayedImage(point: point) else { return nil }
+        return clampedImagePixelPoint(forViewportPoint: point)
+    }
+
+    func clampedImagePixelPoint(forViewportPoint point: CGPoint) -> CGPoint? {
+        guard hasImage else { return nil }
+
+        let imageRect = displayedImageRect
+        guard imageRect.width > 0, imageRect.height > 0 else { return nil }
+
+        let clampedPoint = CGPoint(
+            x: min(max(point.x, imageRect.minX), imageRect.maxX),
+            y: min(max(point.y, imageRect.minY), imageRect.maxY)
         )
 
-        return imageRect.contains(point)
+        let normalizedX = (clampedPoint.x - imageRect.minX) / imageRect.width
+        let normalizedY = (clampedPoint.y - imageRect.minY) / imageRect.height
+
+        return CGPoint(
+            x: normalizedX * imagePixelSize.width,
+            y: normalizedY * imagePixelSize.height
+        )
+    }
+
+    func viewportRect(forImagePixelRect imagePixelRect: CGRect) -> CGRect {
+        guard hasImage else { return .zero }
+
+        let normalizedRect = imagePixelRect.standardized
+        let imageRect = displayedImageRect
+        guard imageRect.width > 0, imageRect.height > 0 else { return .zero }
+
+        return CGRect(
+            x: imageRect.minX + normalizedRect.minX / imagePixelSize.width * imageRect.width,
+            y: imageRect.minY + normalizedRect.minY / imagePixelSize.height * imageRect.height,
+            width: normalizedRect.width / imagePixelSize.width * imageRect.width,
+            height: normalizedRect.height / imagePixelSize.height * imageRect.height
+        )
     }
 
     private func clampedOffset(for proposedOffset: CGSize, scale: CGFloat) -> CGSize {

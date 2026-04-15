@@ -8,6 +8,7 @@ struct StatusBarView: View {
     let positionText: String?
     let zoomText: String
     let actionMessage: String?
+    let cropState: StatusBarCropState?
     let slideshowState: StatusBarSlideshowState?
     let animationState: StatusBarAnimationState?
     let isFullScreen: Bool
@@ -23,7 +24,45 @@ struct StatusBarView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if let slideshowState {
+            if let cropState {
+                HStack(spacing: 6) {
+                    Text("Crop")
+                        .foregroundStyle(.white.opacity(0.96))
+
+                    Menu(cropState.aspectRatioPreset.title) {
+                        ForEach(CropAspectRatioPreset.allCases) { preset in
+                            Button(aspectRatioLabel(for: preset, selected: cropState.aspectRatioPreset == preset)) {
+                                cropState.onSelectAspectRatio(preset)
+                            }
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+
+                    if let selectionText = cropState.selectionText {
+                        Text(selectionText)
+                            .monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.78))
+                    }
+
+                    Button("Save") {
+                        cropState.onSave()
+                    }
+                    .disabled(!cropState.canSaveInPlace)
+
+                    Button("Save As…") {
+                        cropState.onSaveAs()
+                    }
+                    .disabled(!cropState.canSaveAs)
+
+                    Button("Cancel") {
+                        cropState.onCancel()
+                    }
+                }
+                .buttonStyle(.plain)
+
+                separator
+            } else if let slideshowState {
                 HStack(spacing: 4) {
                     Button(action: slideshowState.onPreviousSlide) {
                         Image(systemName: "backward.fill")
@@ -177,6 +216,22 @@ struct StatusBarView: View {
 
         return "\(interval.formatted(.number.precision(.fractionLength(1)))) seconds"
     }
+
+    private func aspectRatioLabel(for preset: CropAspectRatioPreset, selected: Bool) -> String {
+        let title = preset.title
+        return selected ? "✓ \(title)" : title
+    }
+}
+
+struct StatusBarCropState {
+    let aspectRatioPreset: CropAspectRatioPreset
+    let selectionText: String?
+    let canSaveInPlace: Bool
+    let canSaveAs: Bool
+    let onSelectAspectRatio: (CropAspectRatioPreset) -> Void
+    let onSave: () -> Void
+    let onSaveAs: () -> Void
+    let onCancel: () -> Void
 }
 
 struct StatusBarSlideshowState {
