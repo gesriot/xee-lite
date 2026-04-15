@@ -9,6 +9,7 @@ struct XeeLiteApp: App {
     @StateObject private var colorAdjustmentState = ColorAdjustmentState()
     @AppStorage("showsStatusBar") private var showsStatusBar = true
     @AppStorage("showsInspector") private var showsInspector = false
+    @AppStorage("showsThumbnailStrip") private var showsThumbnailStrip = true
 
     var body: some Scene {
         WindowGroup {
@@ -196,6 +197,11 @@ struct XeeLiteApp: App {
 
                 Toggle("Show Inspector", isOn: $showsInspector)
                     .keyboardShortcut("i", modifiers: [.command])
+
+                Divider()
+
+                Toggle("Show Thumbnail Strip", isOn: $showsThumbnailStrip)
+                    .keyboardShortcut("t", modifiers: [.command, .option])
 
                 Divider()
 

@@ -101,6 +101,12 @@ final class AppState: ObservableObject {
         updateDisplayedImage()
     }
 
+    func showImage(at index: Int) {
+        guard imageURLs.indices.contains(index), currentIndex != index else { return }
+        currentIndex = index
+        updateDisplayedImage()
+    }
+
     func jumpImages(by delta: Int) {
         guard !imageURLs.isEmpty, delta != 0 else { return }
 

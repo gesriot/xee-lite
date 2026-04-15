@@ -9,7 +9,9 @@ struct ImageViewerView: View {
     @EnvironmentObject private var colorAdjustmentState: ColorAdjustmentState
     @AppStorage("showsStatusBar") private var showsStatusBar = true
     @AppStorage("showsInspector") private var showsInspector = false
+    @AppStorage("showsThumbnailStrip") private var showsThumbnailStrip = true
     @StateObject private var animatedPlayback = AnimatedImagePlaybackState()
+    @StateObject private var thumbnailStripState = ThumbnailStripState()
     @State private var window: NSWindow?
     @State private var activeSheet: ViewerSheet?
     @State private var deleteConfirmationTarget: DeleteConfirmationTarget?
@@ -38,6 +40,7 @@ struct ImageViewerView: View {
             zoomState.updateImagePixelSize(appState.currentImagePixelSize)
             animatedPlayback.setAnimatedImage(appState.currentAnimatedImage)
             slideshowState.onAdvance = advanceSlideshow
+            thumbnailStripState.updateScope(urls: appState.imageURLs)
             refreshColorPreview()
         }
         .onDisappear {
@@ -69,6 +72,9 @@ struct ImageViewerView: View {
         }
         .onChange(of: animatedPlayback.currentFrameIndex) { _, _ in
             refreshColorPreview()
+        }
+        .onChange(of: appState.imageURLs) { _, newURLs in
+            thumbnailStripState.updateScope(urls: newURLs)
         }
     }
 
@@ -131,6 +137,22 @@ struct ImageViewerView: View {
             }
         }
         .onChange(of: showsInspector) { _, _ in
+            guard let window else { return }
+            updateZoomContext(for: window)
+
+            if zoomState.mode == .fitOnScreen, !window.styleMask.contains(.fullScreen) {
+                resizeWindowForFitOnScreen(window)
+            }
+        }
+        .onChange(of: showsThumbnailStrip) { _, _ in
+            guard let window else { return }
+            updateZoomContext(for: window)
+
+            if zoomState.mode == .fitOnScreen, !window.styleMask.contains(.fullScreen) {
+                resizeWindowForFitOnScreen(window)
+            }
+        }
+        .onChange(of: appState.imageURLs.count) { _, _ in
             guard let window else { return }
             updateZoomContext(for: window)
 
@@ -247,21 +269,43 @@ struct ImageViewerView: View {
             ZStack(alignment: .bottom) {
                 contentLayout
 
-                if showsStatusBar, isChromeVisible {
-                    statusBar
-                        .padding(.horizontal, fullScreenChromeInset)
-                        .padding(.bottom, fullScreenChromeInset)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                if isChromeVisible {
+                    fullScreenChrome
                 }
             }
         } else {
             VStack(spacing: 0) {
                 contentLayout
 
-                if showsStatusBar {
-                    statusBar
-                }
+                windowedChrome
             }
+        }
+    }
+
+    @ViewBuilder
+    private var fullScreenChrome: some View {
+        VStack(spacing: 8) {
+            if thumbnailStripShouldShow {
+                thumbnailStrip
+            }
+
+            if showsStatusBar {
+                statusBar
+            }
+        }
+        .padding(.horizontal, fullScreenChromeInset)
+        .padding(.bottom, fullScreenChromeInset)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    @ViewBuilder
+    private var windowedChrome: some View {
+        if thumbnailStripShouldShow {
+            thumbnailStrip
+        }
+
+        if showsStatusBar {
+            statusBar
         }
     }
 
@@ -401,6 +445,22 @@ struct ImageViewerView: View {
         }
     }
 
+    private var thumbnailStrip: some View {
+        ThumbnailStripView(
+            thumbnailStripState: thumbnailStripState,
+            imageURLs: appState.imageURLs,
+            selectedIndex: appState.currentIndex,
+            isFullScreen: isFullScreen,
+            onSelectIndex: selectThumbnail(at:),
+            onPointerActivity: registerUserActivity
+        )
+        .onHover { hovering in
+            if hovering {
+                registerUserActivity()
+            }
+        }
+    }
+
     private func configureWindow(_ window: NSWindow) {
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = false
@@ -422,7 +482,10 @@ struct ImageViewerView: View {
         let visibleFrame = screen?.visibleFrame ?? .zero
         let availableContentSize = window.contentRect(forFrameRect: visibleFrame).size
         let availableViewportWidth = max(0, availableContentSize.width - currentInspectorWidth)
-        let fitOnScreenViewportHeight = max(0, availableContentSize.height - currentWindowedStatusBarHeight)
+        let fitOnScreenViewportHeight = max(
+            0,
+            availableContentSize.height - currentWindowedStatusBarHeight - currentWindowedThumbnailStripHeight
+        )
 
         zoomState.updateScreen(
             visibleFrameSize: CGSize(width: availableViewportWidth, height: fitOnScreenViewportHeight),
@@ -443,7 +506,10 @@ struct ImageViewerView: View {
 
         let contentSize = CGSize(
             width: min(targetViewportSize.width + currentInspectorWidth, maxContentSize.width),
-            height: min(targetViewportSize.height + currentWindowedStatusBarHeight, maxContentSize.height)
+            height: min(
+                targetViewportSize.height + currentWindowedStatusBarHeight + currentWindowedThumbnailStripHeight,
+                maxContentSize.height
+            )
         )
 
         let targetFrame = centeredFrame(
@@ -469,8 +535,16 @@ struct ImageViewerView: View {
         showsStatusBar && !isFullScreen ? 26 : 0
     }
 
+    private var currentWindowedThumbnailStripHeight: CGFloat {
+        thumbnailStripShouldShow && !isFullScreen ? 88 : 0
+    }
+
     private var currentInspectorWidth: CGFloat {
         showsInspector && !slideshowState.isPlaying && !cropState.isActive && !colorAdjustmentState.isActive ? inspectorWidth : 0
+    }
+
+    private var thumbnailStripShouldShow: Bool {
+        showsThumbnailStrip && appState.imageURLs.count > 1 && !slideshowState.isPlaying && !cropState.isActive
     }
 
     private var rawDisplayedImage: NSImage? {
@@ -638,6 +712,15 @@ struct ImageViewerView: View {
     private func showLastImage() {
         navigateSlide(direction: .forward, wrapping: false, animated: slideshowState.isPlaying) {
             appState.showLastImage()
+        }
+    }
+
+    private func selectThumbnail(at index: Int) {
+        guard appState.imageURLs.indices.contains(index) else { return }
+
+        let direction: SlideshowTransitionDirection = index >= appState.currentIndex ? .forward : .backward
+        navigateSlide(direction: direction, wrapping: false, animated: false) {
+            appState.showImage(at: index)
         }
     }
 
