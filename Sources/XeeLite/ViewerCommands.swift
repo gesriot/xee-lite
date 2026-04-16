@@ -90,6 +90,11 @@ struct ActiveViewerCommands: Commands {
             .keyboardShortcut("e", modifiers: [.command, .shift])
             .disabled(!appState.canExportCurrentImage || cropState.isActive)
 
+            Button("Set as Desktop Picture") {
+                appState.setCurrentImageAsDesktopPicture()
+            }
+            .disabled(!appState.canSetDesktopPicture || cropState.isActive)
+
             Button("Rename...") {
                 appState.requestRenameCurrentImage()
             }

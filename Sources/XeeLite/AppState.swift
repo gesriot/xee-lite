@@ -5,6 +5,9 @@ import SwiftUI
 @MainActor
 final class AppState: ObservableObject {
     private static let fileActionDestinationsDefaultsKey = "fileActionDestinations.v1"
+    private static let clipboardImportDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        .appendingPathComponent("XeeLite-Clipboard", isDirectory: true)
+        .standardizedFileURL
     private static var didConsumeLaunchImageArgument = false
 
     @Published private(set) var imageURLs: [URL] = []
@@ -190,6 +193,11 @@ final class AppState: ObservableObject {
         currentImage != nil
     }
 
+    var canSetDesktopPicture: Bool {
+        guard let currentImageURL else { return false }
+        return !isTemporaryClipboardImageURL(currentImageURL)
+    }
+
     var currentImagePositionText: String? {
         guard imageURLs.indices.contains(currentIndex) else { return nil }
         return "\(currentIndex + 1)/\(imageURLs.count)"
@@ -227,6 +235,43 @@ final class AppState: ObservableObject {
     func requestCopyCurrentImage() {
         guard canCopyCurrentImage else { return }
         copyImageRequestID &+= 1
+    }
+
+    func setCurrentImageAsDesktopPicture() {
+        guard let currentImageURL = currentImageURL?.standardizedFileURL else {
+            presentAlert(
+                title: "Set Desktop Picture Failed",
+                message: FileTransferError.noImage.localizedDescription
+            )
+            return
+        }
+
+        guard !isTemporaryClipboardImageURL(currentImageURL) else {
+            presentAlert(
+                title: "Set Desktop Picture Failed",
+                message: DesktopPictureError.temporaryClipboardImage.localizedDescription
+            )
+            return
+        }
+
+        guard let screen = currentDesktopPictureScreen() else {
+            presentAlert(
+                title: "Set Desktop Picture Failed",
+                message: DesktopPictureError.noScreen.localizedDescription
+            )
+            return
+        }
+
+        do {
+            let options = NSWorkspace.shared.desktopImageOptions(for: screen) ?? [:]
+            try NSWorkspace.shared.setDesktopImageURL(currentImageURL, for: screen, options: options)
+            presentFileActionMessage("Set as Desktop Picture")
+        } catch {
+            presentAlert(
+                title: "Set Desktop Picture Failed",
+                message: error.localizedDescription
+            )
+        }
     }
 
     func pasteImageFromClipboard() {
@@ -488,6 +533,18 @@ final class AppState: ObservableObject {
         return FinderLabel(rawValue: labelNumber) ?? .none
     }
 
+    private func currentDesktopPictureScreen() -> NSScreen? {
+        viewerWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first
+    }
+
+    private func isTemporaryClipboardImageURL(_ url: URL) -> Bool {
+        let standardizedURL = url.standardizedFileURL
+        let basePath = Self.clipboardImportDirectoryURL.path
+        let standardizedPath = standardizedURL.path
+
+        return standardizedPath == basePath || standardizedPath.hasPrefix(basePath + "/")
+    }
+
     private func performCurrentImageTransfer(_ action: FileTransferAction, toDestinationSlot slotNumber: Int) {
         guard let currentImageURL = currentImageURL?.standardizedFileURL else {
             presentAlert(
@@ -721,8 +778,7 @@ final class AppState: ObservableObject {
     }
 
     private func writeTemporaryImportedImage(_ image: NSImage) throws -> URL {
-        let directoryURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("XeeLite-Clipboard", isDirectory: true)
+        let directoryURL = Self.clipboardImportDirectoryURL
 
         try FileManager.default.createDirectory(
             at: directoryURL,
@@ -783,6 +839,20 @@ private enum RenameImageError: LocalizedError {
             return "A file named \"\(name)\" already exists."
         case let .moveFailed(error):
             return "Couldn't rename the file: \(error.localizedDescription)"
+        }
+    }
+}
+
+private enum DesktopPictureError: LocalizedError {
+    case noScreen
+    case temporaryClipboardImage
+
+    var errorDescription: String? {
+        switch self {
+        case .noScreen:
+            return "Couldn't determine which display should receive the desktop picture."
+        case .temporaryClipboardImage:
+            return "Clipboard images need to be saved as a regular file before they can be used as a desktop picture."
         }
     }
 }
