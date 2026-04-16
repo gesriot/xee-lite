@@ -19,6 +19,7 @@ final class AppState: ObservableObject {
     @Published private(set) var currentImageFinderLabel: FinderLabel?
     @Published private(set) var currentMetadata = ImageMetadata(sections: [])
     @Published private(set) var currentAnimatedImage: AnimatedImage?
+    @Published private(set) var currentImageContentVersion: UInt64 = 0
     @Published private(set) var renameRequestID: UInt64 = 0
     @Published private(set) var manageDestinationsRequestID: UInt64 = 0
     @Published private(set) var deleteRequestID: UInt64 = 0
@@ -31,6 +32,14 @@ final class AppState: ObservableObject {
 
     private weak var viewerWindow: NSWindow?
     private var fileActionMessageDismissWorkItem: DispatchWorkItem?
+    private let fileSystemWatcherQueue = DispatchQueue(label: "XeeLite.FileSystemWatcher.Events", qos: .utility)
+    private var folderWatcher: FileSystemWatcher?
+    private var currentFileWatcher: FileSystemWatcher?
+    private var watchedFolderURL: URL?
+    private var watchedFileURL: URL?
+    private var fileSystemRefreshWorkItem: DispatchWorkItem?
+    private var isFolderScopedObservationEnabled = false
+    private var currentImageFileIdentity: NSObject?
 
     init() {
         fileActionDestinations = Self.loadFileActionDestinations()
@@ -64,23 +73,14 @@ final class AppState: ObservableObject {
         let folderURL = standardizedURL.deletingLastPathComponent()
 
         do {
-            let folderContents = try FileManager.default.contentsOfDirectory(
-                at: folderURL,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            )
-
-            let images = folderContents
-                .filter { SupportedImageFormats.folderExtensions.contains($0.pathExtension.lowercased()) }
-                .sorted {
-                    $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
-                }
+            let images = try scanImageURLs(in: folderURL)
 
             guard !images.isEmpty else {
                 setSingleImage(url: standardizedURL)
                 return
             }
 
+            isFolderScopedObservationEnabled = true
             imageURLs = images
             currentIndex = images.firstIndex(of: standardizedURL) ?? 0
             updateDisplayedImage()
@@ -453,6 +453,9 @@ final class AppState: ObservableObject {
             currentImageFinderLabel = nil
             currentMetadata = ImageMetadata(sections: [])
             currentAnimatedImage = nil
+            currentImageFileIdentity = nil
+            bumpCurrentImageContentVersion()
+            refreshFileSystemWatchers()
             return
         }
 
@@ -467,6 +470,9 @@ final class AppState: ObservableObject {
             currentImageFinderLabel = finderLabel(for: url)
             currentMetadata = ImageMetadataLoader.load(from: url)
             currentAnimatedImage = animatedImage
+            currentImageFileIdentity = fileIdentity(for: url)
+            bumpCurrentImageContentVersion()
+            refreshFileSystemWatchers()
             return
         }
 
@@ -477,29 +483,39 @@ final class AppState: ObservableObject {
         currentImageFinderLabel = finderLabel(for: url)
         currentMetadata = ImageMetadataLoader.load(from: url)
         currentAnimatedImage = animatedImage
+        currentImageFileIdentity = fileIdentity(for: url)
+        bumpCurrentImageContentVersion()
+        refreshFileSystemWatchers()
     }
 
     private func setSingleImage(url: URL, error: Error? = nil) {
-        imageURLs = [url]
+        let standardizedURL = url.standardizedFileURL
+        isFolderScopedObservationEnabled = false
+        imageURLs = [standardizedURL]
         currentIndex = 0
-        currentImageURL = url
-        let animatedImage = AnimatedImageLoader.load(from: url)
+        currentImageURL = standardizedURL
+        let animatedImage = AnimatedImageLoader.load(from: standardizedURL)
 
-        if let image = animatedImage?.posterImage ?? NSImage(contentsOf: url) {
+        if let image = animatedImage?.posterImage ?? NSImage(contentsOf: standardizedURL) {
             currentImage = image
             currentImagePixelSize = animatedImage?.pixelSize ?? pixelSize(for: image)
-            currentImageFileSize = fileSize(for: url)
-            currentImageFinderLabel = finderLabel(for: url)
-            currentMetadata = ImageMetadataLoader.load(from: url)
+            currentImageFileSize = fileSize(for: standardizedURL)
+            currentImageFinderLabel = finderLabel(for: standardizedURL)
+            currentMetadata = ImageMetadataLoader.load(from: standardizedURL)
             currentAnimatedImage = animatedImage
+            currentImageFileIdentity = fileIdentity(for: standardizedURL)
         } else {
             currentImage = nil
             currentImagePixelSize = nil
-            currentImageFileSize = fileSize(for: url)
-            currentImageFinderLabel = finderLabel(for: url)
-            currentMetadata = ImageMetadataLoader.load(from: url)
+            currentImageFileSize = fileSize(for: standardizedURL)
+            currentImageFinderLabel = finderLabel(for: standardizedURL)
+            currentMetadata = ImageMetadataLoader.load(from: standardizedURL)
             currentAnimatedImage = animatedImage
+            currentImageFileIdentity = fileIdentity(for: standardizedURL)
         }
+
+        bumpCurrentImageContentVersion()
+        refreshFileSystemWatchers()
     }
 
     private func pixelSize(for image: NSImage) -> CGSize? {
@@ -527,6 +543,11 @@ final class AppState: ObservableObject {
         return size.int64Value
     }
 
+    private func fileIdentity(for url: URL) -> NSObject? {
+        let resourceValues = try? url.resourceValues(forKeys: [.fileResourceIdentifierKey])
+        return resourceValues?.fileResourceIdentifier as? NSObject
+    }
+
     private func finderLabel(for url: URL) -> FinderLabel {
         let resourceValues = try? url.resourceValues(forKeys: [.labelNumberKey])
         let labelNumber = resourceValues?.labelNumber ?? FinderLabel.none.rawValue
@@ -543,6 +564,25 @@ final class AppState: ObservableObject {
         let standardizedPath = standardizedURL.path
 
         return standardizedPath == basePath || standardizedPath.hasPrefix(basePath + "/")
+    }
+
+    private func scanImageURLs(in folderURL: URL) throws -> [URL] {
+        let folderContents = try FileManager.default.contentsOfDirectory(
+            at: folderURL,
+            includingPropertiesForKeys: [.fileResourceIdentifierKey],
+            options: [.skipsHiddenFiles]
+        )
+
+        return folderContents
+            .map(\.standardizedFileURL)
+            .filter { SupportedImageFormats.folderExtensions.contains($0.pathExtension.lowercased()) }
+            .sorted {
+                $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+            }
+    }
+
+    private func bumpCurrentImageContentVersion() {
+        currentImageContentVersion &+= 1
     }
 
     private func performCurrentImageTransfer(_ action: FileTransferAction, toDestinationSlot slotNumber: Int) {
@@ -650,6 +690,7 @@ final class AppState: ObservableObject {
     }
 
     private func clearCurrentImageState() {
+        isFolderScopedObservationEnabled = false
         imageURLs = []
         currentIndex = 0
         currentImage = nil
@@ -659,6 +700,9 @@ final class AppState: ObservableObject {
         currentImageFinderLabel = nil
         currentMetadata = ImageMetadata(sections: [])
         currentAnimatedImage = nil
+        currentImageFileIdentity = nil
+        bumpCurrentImageContentVersion()
+        refreshFileSystemWatchers()
     }
 
     private func presentAlert(title: String, message: String) {
@@ -688,6 +732,126 @@ final class AppState: ObservableObject {
         let encoder = JSONEncoder()
         guard let data = try? encoder.encode(fileActionDestinations) else { return }
         UserDefaults.standard.set(data, forKey: Self.fileActionDestinationsDefaultsKey)
+    }
+
+    private func refreshObservedFileSystemState() {
+        fileSystemRefreshWorkItem = nil
+
+        guard let currentImageURL = currentImageURL?.standardizedFileURL else {
+            refreshFileSystemWatchers()
+            return
+        }
+
+        if isFolderScopedObservationEnabled {
+            refreshFolderScopedImageState(currentImageURL: currentImageURL)
+        } else {
+            refreshIsolatedImageState(currentImageURL: currentImageURL)
+        }
+    }
+
+    private func refreshFolderScopedImageState(currentImageURL: URL) {
+        let folderURL = currentImageURL.deletingLastPathComponent()
+
+        do {
+            let images = try scanImageURLs(in: folderURL)
+
+            guard !images.isEmpty else {
+                clearCurrentImageState()
+                return
+            }
+
+            imageURLs = images
+
+            if let preservedIndex = preservedCurrentImageIndex(in: images, currentImageURL: currentImageURL) {
+                currentIndex = preservedIndex
+            } else {
+                currentIndex = min(currentIndex, images.count - 1)
+            }
+
+            updateDisplayedImage()
+        } catch {
+            guard FileManager.default.fileExists(atPath: currentImageURL.path) else {
+                clearCurrentImageState()
+                return
+            }
+
+            guard imageURLs.indices.contains(currentIndex) else {
+                clearCurrentImageState()
+                return
+            }
+
+            updateDisplayedImage()
+        }
+    }
+
+    private func refreshIsolatedImageState(currentImageURL: URL) {
+        guard FileManager.default.fileExists(atPath: currentImageURL.path) else {
+            clearCurrentImageState()
+            return
+        }
+
+        setSingleImage(url: currentImageURL)
+    }
+
+    private func preservedCurrentImageIndex(in images: [URL], currentImageURL: URL) -> Int? {
+        if let directMatchIndex = images.firstIndex(of: currentImageURL) {
+            return directMatchIndex
+        }
+
+        guard let currentImageFileIdentity else { return nil }
+
+        return images.firstIndex { url in
+            guard let candidateIdentity = fileIdentity(for: url) else { return false }
+            return currentImageFileIdentity.isEqual(candidateIdentity)
+        }
+    }
+
+    private func scheduleObservedFileSystemRefresh() {
+        guard currentImageURL != nil else { return }
+
+        fileSystemRefreshWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.refreshObservedFileSystemState()
+        }
+
+        fileSystemRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
+    }
+
+    private func refreshFileSystemWatchers() {
+        let currentURL = currentImageURL?.standardizedFileURL
+        let folderURL = isFolderScopedObservationEnabled ? currentURL?.deletingLastPathComponent() : nil
+
+        if watchedFolderURL != folderURL {
+            watchedFolderURL = folderURL
+            folderWatcher = folderURL.flatMap { observedURL in
+                FileSystemWatcher(
+                    url: observedURL,
+                    eventMask: [.write, .rename, .delete, .attrib, .extend, .link, .revoke],
+                    queue: fileSystemWatcherQueue
+                ) { [weak self] in
+                    DispatchQueue.main.async {
+                        self?.scheduleObservedFileSystemRefresh()
+                    }
+                }
+            }
+        }
+
+        if watchedFileURL != currentURL {
+            watchedFileURL = currentURL
+            currentFileWatcher = currentURL.flatMap { observedURL in
+                FileSystemWatcher(
+                    url: observedURL,
+                    eventMask: [.write, .rename, .delete, .attrib, .extend, .revoke],
+                    queue: fileSystemWatcherQueue
+                ) { [weak self] in
+                    DispatchQueue.main.async {
+                        self?.scheduleObservedFileSystemRefresh()
+                    }
+                }
+            }
+        }
     }
 
     private static func loadFileActionDestinations() -> [FileActionDestination] {

@@ -94,6 +94,14 @@ struct ImageViewerView: View {
                 colorAdjustmentState.deactivate()
             }
         }
+        .onChange(of: appState.currentImageContentVersion) { _, _ in
+            animatedPlayback.setAnimatedImage(appState.currentAnimatedImage)
+            if appState.currentImageURL == nil {
+                colorAdjustmentState.deactivate()
+            } else {
+                refreshColorPreview()
+            }
+        }
         .onChange(of: animatedPlayback.currentFrameIndex) { _, _ in
             refreshColorPreview()
         }
