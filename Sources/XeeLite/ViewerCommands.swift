@@ -64,6 +64,17 @@ struct ActiveViewerCommands: Commands {
     @ObservedObject var colorAdjustmentState: ColorAdjustmentState
 
     var body: some Commands {
+        CommandGroup(after: .pasteboard) {
+            Button("Copy Image") {
+                appState.requestCopyCurrentImage()
+            }
+            .disabled(!appState.canCopyCurrentImage)
+
+            Button("Open Image from Clipboard") {
+                appState.pasteImageFromClipboard()
+            }
+        }
+
         CommandGroup(replacing: .printItem) {
             Button("Print…") {
                 appState.requestPrintCurrentImage()

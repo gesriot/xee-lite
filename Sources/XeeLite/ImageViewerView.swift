@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ImageViewerView: View {
     @EnvironmentObject private var viewerCoordinator: ViewerCoordinator
@@ -17,6 +18,7 @@ struct ImageViewerView: View {
     @State private var window: NSWindow?
     @State private var activeSheet: ViewerSheet?
     @State private var deleteConfirmationTarget: DeleteConfirmationTarget?
+    @State private var isDropTargeted = false
     @State private var isFullScreen = false
     @State private var isChromeVisible = true
     @State private var autoHideWorkItem: DispatchWorkItem?
@@ -32,7 +34,27 @@ struct ImageViewerView: View {
     private var baseStyledContent: some View {
         rootContent
         .background(Color.black.opacity(0.92))
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: isFullScreen ? 16 : 12, style: .continuous)
+                    .strokeBorder(.white.opacity(0.75), style: StrokeStyle(lineWidth: 3, dash: [10, 8]))
+                    .padding(isFullScreen ? 16 : 12)
+                    .overlay {
+                        Text("Drop Image to Open")
+                            .font(.headline.weight(.semibold))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color.black.opacity(0.7), in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                    .allowsHitTesting(false)
+            }
+        }
+        .onDrop(of: [UTType.fileURL.identifier, UTType.image.identifier], isTargeted: $isDropTargeted) { providers in
+            handleDrop(providers: providers)
+        }
         .animation(.easeOut(duration: 0.16), value: isChromeVisible)
+        .animation(.easeOut(duration: 0.12), value: isDropTargeted)
     }
 
     private var appearanceObservedContent: some View {
@@ -96,6 +118,9 @@ struct ImageViewerView: View {
         }
         .onChange(of: appState.printRequestID) { _, _ in
             presentPrintSheetIfPossible()
+        }
+        .onChange(of: appState.copyImageRequestID) { _, _ in
+            copyCurrentImageToPasteboard()
         }
     }
 
@@ -206,6 +231,8 @@ struct ImageViewerView: View {
                 onNext: showNextImage,
                 onFirst: showFirstImage,
                 onLast: showLastImage,
+                onCopyImage: copyCurrentImageToPasteboard,
+                onPasteImage: appState.pasteImageFromClipboard,
                 onRename: appState.requestRenameCurrentImage,
                 onDelete: appState.requestDeleteCurrentImage,
                 onSetFinderLabel: appState.setFinderLabel(_:),
@@ -1027,6 +1054,40 @@ struct ImageViewerView: View {
         )
     }
 
+    private func copyCurrentImageToPasteboard() {
+        guard let currentImage = rawDisplayedImage else { return }
+
+        if ClipboardImageTransfer.copyImage(currentImage) {
+            appState.showFileActionMessage("Copied image")
+        } else {
+            appState.showErrorAlert(
+                title: "Copy Failed",
+                message: ClipboardImageTransferError.copyFailed.localizedDescription
+            )
+        }
+    }
+
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        let accepted = ClipboardImageTransfer.readFromItemProviders(providers) { result in
+            switch result {
+            case let .success(source):
+                appState.importImageSource(
+                    source,
+                    successMessage: "Opened dropped image",
+                    failureTitle: "Drop Failed"
+                )
+            case let .failure(error as LocalizedError):
+                if let description = error.errorDescription {
+                    appState.showErrorAlert(title: "Drop Failed", message: description)
+                }
+            case let .failure(error):
+                appState.showErrorAlert(title: "Drop Failed", message: error.localizedDescription)
+            }
+        }
+
+        return accepted
+    }
+
     private var activeAlertBinding: Binding<FileActionAlertState?> {
         Binding(
             get: { appState.activeAlert },
@@ -1107,6 +1168,8 @@ private struct KeyboardHandlerView: NSViewRepresentable {
     let onNext: () -> Void
     let onFirst: () -> Void
     let onLast: () -> Void
+    let onCopyImage: () -> Void
+    let onPasteImage: () -> Void
     let onRename: () -> Void
     let onDelete: () -> Void
     let onSetFinderLabel: (FinderLabel) -> Void
@@ -1128,6 +1191,8 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         view.onNext = onNext
         view.onFirst = onFirst
         view.onLast = onLast
+        view.onCopyImage = onCopyImage
+        view.onPasteImage = onPasteImage
         view.onRename = onRename
         view.onDelete = onDelete
         view.onSetFinderLabel = onSetFinderLabel
@@ -1150,6 +1215,8 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         nsView.onNext = onNext
         nsView.onFirst = onFirst
         nsView.onLast = onLast
+        nsView.onCopyImage = onCopyImage
+        nsView.onPasteImage = onPasteImage
         nsView.onRename = onRename
         nsView.onDelete = onDelete
         nsView.onSetFinderLabel = onSetFinderLabel
@@ -1172,6 +1239,8 @@ private final class KeyAwareView: NSView {
     var onNext: (() -> Void)?
     var onFirst: (() -> Void)?
     var onLast: (() -> Void)?
+    var onCopyImage: (() -> Void)?
+    var onPasteImage: (() -> Void)?
     var onRename: (() -> Void)?
     var onDelete: (() -> Void)?
     var onSetFinderLabel: ((FinderLabel) -> Void)?
@@ -1215,6 +1284,15 @@ private final class KeyAwareView: NSView {
         guard window?.isKeyWindow == true else { return event }
 
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+
+        switch event.keyCode {
+        case 8:
+            if modifiers == [.command] { onCopyImage?(); return nil }
+        case 9:
+            if modifiers == [.command] { onPasteImage?(); return nil }
+        default:
+            break
+        }
 
         if isCropActive {
             switch event.keyCode {

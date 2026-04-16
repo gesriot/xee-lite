@@ -21,6 +21,7 @@ final class AppState: ObservableObject {
     @Published private(set) var deleteRequestID: UInt64 = 0
     @Published private(set) var exportRequestID: UInt64 = 0
     @Published private(set) var printRequestID: UInt64 = 0
+    @Published private(set) var copyImageRequestID: UInt64 = 0
     @Published private(set) var fileActionDestinations: [FileActionDestination]
     @Published private(set) var fileActionMessage: String?
     @Published var activeAlert: FileActionAlertState?
@@ -185,6 +186,10 @@ final class AppState: ObservableObject {
         currentImage != nil && currentImageURL != nil && currentImagePixelSize != nil
     }
 
+    var canCopyCurrentImage: Bool {
+        currentImage != nil
+    }
+
     var currentImagePositionText: String? {
         guard imageURLs.indices.contains(currentIndex) else { return nil }
         return "\(currentIndex + 1)/\(imageURLs.count)"
@@ -217,6 +222,52 @@ final class AppState: ObservableObject {
     func requestPrintCurrentImage() {
         guard canPrintCurrentImage else { return }
         printRequestID &+= 1
+    }
+
+    func requestCopyCurrentImage() {
+        guard canCopyCurrentImage else { return }
+        copyImageRequestID &+= 1
+    }
+
+    func pasteImageFromClipboard() {
+        switch ClipboardImageTransfer.readFromPasteboard() {
+        case let .success(source):
+            importImageSource(
+                source,
+                successMessage: "Opened image from clipboard",
+                failureTitle: "Paste Failed"
+            )
+        case let .failure(error as LocalizedError):
+            if let description = error.errorDescription {
+                presentAlert(title: "Paste Failed", message: description)
+            }
+        case let .failure(error):
+            presentAlert(title: "Paste Failed", message: error.localizedDescription)
+        }
+    }
+
+    func importImageSource(
+        _ source: ImportedImageSource,
+        successMessage: String,
+        failureTitle: String
+    ) {
+        do {
+            switch source {
+            case let .fileURL(url):
+                loadImage(at: url)
+            case let .bitmap(image):
+                let temporaryURL = try writeTemporaryImportedImage(image)
+                setSingleImage(url: temporaryURL)
+            }
+
+            presentFileActionMessage(successMessage)
+        } catch let error as LocalizedError {
+            if let description = error.errorDescription {
+                presentAlert(title: failureTitle, message: description)
+            }
+        } catch {
+            presentAlert(title: failureTitle, message: error.localizedDescription)
+        }
     }
 
     func setFileActionDestination(_ folderURL: URL, forSlot slotNumber: Int) {
@@ -667,6 +718,29 @@ final class AppState: ObservableObject {
                 return directoryURL.appendingPathComponent(candidateURL.lastPathComponent)
             }
         }
+    }
+
+    private func writeTemporaryImportedImage(_ image: NSImage) throws -> URL {
+        let directoryURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("XeeLite-Clipboard", isDirectory: true)
+
+        try FileManager.default.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true
+        )
+
+        let url = directoryURL.appendingPathComponent(UUID().uuidString).appendingPathExtension("png")
+
+        guard
+            let tiffData = image.tiffRepresentation,
+            let bitmap = NSBitmapImageRep(data: tiffData),
+            let pngData = bitmap.representation(using: .png, properties: [:])
+        else {
+            throw ClipboardImageTransferError.decodeFailed
+        }
+
+        try pngData.write(to: url, options: .atomic)
+        return url
     }
 }
 
