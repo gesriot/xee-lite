@@ -80,7 +80,7 @@ struct ImageViewerView: View {
         }
     }
 
-    private var lifecycleObservedContent: some View {
+    private var requestObservedContent: some View {
         imageObservedContent
         .onChange(of: appState.renameRequestID) { _, _ in
             presentRenameSheetIfPossible()
@@ -94,6 +94,13 @@ struct ImageViewerView: View {
         .onChange(of: appState.exportRequestID) { _, _ in
             presentExportSheetIfPossible()
         }
+        .onChange(of: appState.printRequestID) { _, _ in
+            presentPrintSheetIfPossible()
+        }
+    }
+
+    private var lifecycleObservedContent: some View {
+        requestObservedContent
         .onChange(of: cropState.activateRequestID) { _, _ in
             startCrop()
         }
@@ -998,6 +1005,28 @@ struct ImageViewerView: View {
         )
     }
 
+    private func presentPrintSheetIfPossible() {
+        guard
+            let currentImage = rawDisplayedImage,
+            let currentImageURL = appState.currentImageURL,
+            let currentImagePixelSize = appState.currentImagePixelSize
+        else {
+            return
+        }
+
+        if slideshowState.isPlaying {
+            slideshowState.pause()
+        }
+
+        activeSheet = .print(
+            PrintSheetContext(
+                image: currentImage,
+                url: currentImageURL,
+                pixelSize: currentImagePixelSize
+            )
+        )
+    }
+
     private var activeAlertBinding: Binding<FileActionAlertState?> {
         Binding(
             get: { appState.activeAlert },
@@ -1054,6 +1083,19 @@ struct ImageViewerView: View {
                     )
                     appState.showFileActionMessage("Exported \(exportedURL.lastPathComponent)")
                     return exportedURL
+                }
+            )
+        case let .print(context):
+            PrintImageSheet(
+                imageURL: context.url,
+                pixelSize: context.pixelSize,
+                onPrint: { scalingMode in
+                    ImagePrinter.printImage(
+                        context.image,
+                        title: context.url.lastPathComponent,
+                        window: window,
+                        scalingMode: scalingMode
+                    )
                 }
             )
         }
@@ -1276,6 +1318,7 @@ private enum ViewerSheet: Identifiable {
     case rename(URL)
     case manageDestinations
     case export(ExportSheetContext)
+    case print(PrintSheetContext)
 
     var id: String {
         switch self {
@@ -1285,6 +1328,8 @@ private enum ViewerSheet: Identifiable {
             return "manage-destinations"
         case let .export(context):
             return "export:\(context.id.uuidString)"
+        case let .print(context):
+            return "print:\(context.id.uuidString)"
         }
     }
 }
@@ -1295,6 +1340,13 @@ private struct ExportSheetContext {
     let url: URL
     let pixelSize: CGSize
     let isAnimatedSource: Bool
+}
+
+private struct PrintSheetContext {
+    let id = UUID()
+    let image: NSImage
+    let url: URL
+    let pixelSize: CGSize
 }
 
 private struct DeleteConfirmationTarget: Identifiable {

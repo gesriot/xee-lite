@@ -64,6 +64,14 @@ struct ActiveViewerCommands: Commands {
     @ObservedObject var colorAdjustmentState: ColorAdjustmentState
 
     var body: some Commands {
+        CommandGroup(replacing: .printItem) {
+            Button("Print…") {
+                appState.requestPrintCurrentImage()
+            }
+            .keyboardShortcut("p", modifiers: [.command])
+            .disabled(!appState.canPrintCurrentImage || cropState.isActive)
+        }
+
         CommandGroup(after: .newItem) {
             Button("Export…") {
                 appState.requestExportCurrentImage()

@@ -20,6 +20,7 @@ final class AppState: ObservableObject {
     @Published private(set) var manageDestinationsRequestID: UInt64 = 0
     @Published private(set) var deleteRequestID: UInt64 = 0
     @Published private(set) var exportRequestID: UInt64 = 0
+    @Published private(set) var printRequestID: UInt64 = 0
     @Published private(set) var fileActionDestinations: [FileActionDestination]
     @Published private(set) var fileActionMessage: String?
     @Published var activeAlert: FileActionAlertState?
@@ -180,6 +181,10 @@ final class AppState: ObservableObject {
         currentImage != nil && currentImageURL != nil && currentImagePixelSize != nil
     }
 
+    var canPrintCurrentImage: Bool {
+        currentImage != nil && currentImageURL != nil && currentImagePixelSize != nil
+    }
+
     var currentImagePositionText: String? {
         guard imageURLs.indices.contains(currentIndex) else { return nil }
         return "\(currentIndex + 1)/\(imageURLs.count)"
@@ -207,6 +212,11 @@ final class AppState: ObservableObject {
     func requestExportCurrentImage() {
         guard canExportCurrentImage else { return }
         exportRequestID &+= 1
+    }
+
+    func requestPrintCurrentImage() {
+        guard canPrintCurrentImage else { return }
+        printRequestID &+= 1
     }
 
     func setFileActionDestination(_ folderURL: URL, forSlot slotNumber: Int) {
