@@ -19,6 +19,7 @@ final class AppState: ObservableObject {
     @Published private(set) var renameRequestID: UInt64 = 0
     @Published private(set) var manageDestinationsRequestID: UInt64 = 0
     @Published private(set) var deleteRequestID: UInt64 = 0
+    @Published private(set) var exportRequestID: UInt64 = 0
     @Published private(set) var fileActionDestinations: [FileActionDestination]
     @Published private(set) var fileActionMessage: String?
     @Published var activeAlert: FileActionAlertState?
@@ -175,6 +176,10 @@ final class AppState: ObservableObject {
         currentImageURL != nil && currentImagePixelSize != nil
     }
 
+    var canExportCurrentImage: Bool {
+        currentImage != nil && currentImageURL != nil && currentImagePixelSize != nil
+    }
+
     var currentImagePositionText: String? {
         guard imageURLs.indices.contains(currentIndex) else { return nil }
         return "\(currentIndex + 1)/\(imageURLs.count)"
@@ -197,6 +202,11 @@ final class AppState: ObservableObject {
     func requestDeleteCurrentImage() {
         guard canDeleteCurrentImage else { return }
         deleteRequestID &+= 1
+    }
+
+    func requestExportCurrentImage() {
+        guard canExportCurrentImage else { return }
+        exportRequestID &+= 1
     }
 
     func setFileActionDestination(_ folderURL: URL, forSlot slotNumber: Int) {

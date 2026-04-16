@@ -65,6 +65,12 @@ struct ActiveViewerCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
+            Button("Export…") {
+                appState.requestExportCurrentImage()
+            }
+            .keyboardShortcut("e", modifiers: [.command, .shift])
+            .disabled(!appState.canExportCurrentImage || cropState.isActive)
+
             Button("Rename...") {
                 appState.requestRenameCurrentImage()
             }

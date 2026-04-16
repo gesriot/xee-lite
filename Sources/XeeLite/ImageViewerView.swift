@@ -91,6 +91,9 @@ struct ImageViewerView: View {
         .onChange(of: appState.deleteRequestID) { _, _ in
             presentDeleteConfirmationIfPossible()
         }
+        .onChange(of: appState.exportRequestID) { _, _ in
+            presentExportSheetIfPossible()
+        }
         .onChange(of: cropState.activateRequestID) { _, _ in
             startCrop()
         }
@@ -972,6 +975,29 @@ struct ImageViewerView: View {
         deleteConfirmationTarget = DeleteConfirmationTarget(url: currentImageURL)
     }
 
+    private func presentExportSheetIfPossible() {
+        guard
+            let currentImage = rawDisplayedImage,
+            let currentImageURL = appState.currentImageURL,
+            let currentImagePixelSize = appState.currentImagePixelSize
+        else {
+            return
+        }
+
+        if slideshowState.isPlaying {
+            slideshowState.pause()
+        }
+
+        activeSheet = .export(
+            ExportSheetContext(
+                image: currentImage,
+                url: currentImageURL,
+                pixelSize: currentImagePixelSize,
+                isAnimatedSource: appState.currentAnimatedImage?.isAnimated ?? false
+            )
+        )
+    }
+
     private var activeAlertBinding: Binding<FileActionAlertState?> {
         Binding(
             get: { appState.activeAlert },
@@ -1012,6 +1038,22 @@ struct ImageViewerView: View {
                 },
                 onClearDestination: { slotNumber in
                     appState.clearFileActionDestination(forSlot: slotNumber)
+                }
+            )
+        case let .export(context):
+            ExportImageSheet(
+                imageURL: context.url,
+                sourcePixelSize: context.pixelSize,
+                isAnimatedSource: context.isAnimatedSource,
+                onExport: { options in
+                    let exportedURL = try ImageExporter.exportImage(
+                        from: context.image,
+                        sourcePixelSize: context.pixelSize,
+                        originalURL: context.url,
+                        options: options
+                    )
+                    appState.showFileActionMessage("Exported \(exportedURL.lastPathComponent)")
+                    return exportedURL
                 }
             )
         }
@@ -1233,6 +1275,7 @@ private final class KeyAwareView: NSView {
 private enum ViewerSheet: Identifiable {
     case rename(URL)
     case manageDestinations
+    case export(ExportSheetContext)
 
     var id: String {
         switch self {
@@ -1240,8 +1283,18 @@ private enum ViewerSheet: Identifiable {
             return "rename:\(url.path)"
         case .manageDestinations:
             return "manage-destinations"
+        case let .export(context):
+            return "export:\(context.id.uuidString)"
         }
     }
+}
+
+private struct ExportSheetContext {
+    let id = UUID()
+    let image: NSImage
+    let url: URL
+    let pixelSize: CGSize
+    let isAnimatedSource: Bool
 }
 
 private struct DeleteConfirmationTarget: Identifiable {
