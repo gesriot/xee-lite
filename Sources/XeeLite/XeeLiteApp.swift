@@ -28,6 +28,13 @@ struct XeeLiteApp: App {
             }
         }
         .defaultSize(width: 1040, height: 720)
+
+        Settings {
+            XeeThemedSceneRoot {
+                PreferencesView()
+                    .environmentObject(viewerCoordinator)
+            }
+        }
         .commands {
             CommonAppCommands(
                 onNewTab: openNewTab,

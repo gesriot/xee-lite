@@ -44,6 +44,7 @@ enum SlideshowTransitionStyle: String, CaseIterable, Identifiable {
 final class SlideshowPlaybackState: ObservableObject {
     private static let intervalDefaultsKey = "slideshow.interval.v1"
     private static let transitionDefaultsKey = "slideshow.transition.v1"
+    private static let defaultInterval: TimeInterval = 3.0
 
     @Published private(set) var isPlaying = false
     @Published private(set) var interval: TimeInterval
@@ -55,24 +56,20 @@ final class SlideshowPlaybackState: ObservableObject {
 
     private let userDefaults: UserDefaults
     private var timerCancellable: AnyCancellable?
+    private var defaultsDidChangeCancellable: AnyCancellable?
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
 
-        let storedInterval = userDefaults.double(forKey: Self.intervalDefaultsKey)
-        if storedInterval > 0 {
-            interval = storedInterval
-        } else {
-            interval = 3.0
-        }
+        interval = Self.resolvedInterval(from: userDefaults)
+        transitionStyle = Self.resolvedTransitionStyle(from: userDefaults)
 
-        if
-            let rawValue = userDefaults.string(forKey: Self.transitionDefaultsKey),
-            let storedTransition = SlideshowTransitionStyle(rawValue: rawValue)
-        {
-            transitionStyle = storedTransition
-        } else {
-            transitionStyle = .fade
+        defaultsDidChangeCancellable = NotificationCenter.default.publisher(
+            for: UserDefaults.didChangeNotification,
+            object: userDefaults
+        )
+        .sink { [weak self] _ in
+            self?.reloadDefaultsIfNeeded()
         }
     }
 
@@ -91,6 +88,7 @@ final class SlideshowPlaybackState: ObservableObject {
 
     func start() {
         guard !isPlaying else { return }
+        reloadDefaultsIfNeeded()
         isPlaying = true
         scheduleTimer()
     }
@@ -100,6 +98,7 @@ final class SlideshowPlaybackState: ObservableObject {
         isPlaying = false
         timerCancellable?.cancel()
         timerCancellable = nil
+        reloadDefaultsIfNeeded()
     }
 
     func togglePlayback() {
@@ -127,6 +126,20 @@ final class SlideshowPlaybackState: ObservableObject {
         userDefaults.set(style.rawValue, forKey: Self.transitionDefaultsKey)
     }
 
+    private func reloadDefaultsIfNeeded() {
+        guard !isPlaying else { return }
+
+        let storedInterval = Self.resolvedInterval(from: userDefaults)
+        if abs(interval - storedInterval) > 0.001 {
+            interval = storedInterval
+        }
+
+        let storedTransitionStyle = Self.resolvedTransitionStyle(from: userDefaults)
+        if transitionStyle != storedTransitionStyle {
+            transitionStyle = storedTransitionStyle
+        }
+    }
+
     private func scheduleTimer() {
         timerCancellable?.cancel()
 
@@ -135,5 +148,21 @@ final class SlideshowPlaybackState: ObservableObject {
             .sink { [weak self] _ in
                 self?.onAdvance?()
             }
+    }
+
+    private static func resolvedInterval(from userDefaults: UserDefaults) -> TimeInterval {
+        let storedInterval = userDefaults.double(forKey: intervalDefaultsKey)
+        return storedInterval > 0 ? storedInterval : defaultInterval
+    }
+
+    private static func resolvedTransitionStyle(from userDefaults: UserDefaults) -> SlideshowTransitionStyle {
+        guard
+            let rawValue = userDefaults.string(forKey: transitionDefaultsKey),
+            let storedTransition = SlideshowTransitionStyle(rawValue: rawValue)
+        else {
+            return .fade
+        }
+
+        return storedTransition
     }
 }

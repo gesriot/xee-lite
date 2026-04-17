@@ -1,10 +1,10 @@
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
-    private static let fileActionDestinationsDefaultsKey = "fileActionDestinations.v1"
     private static let clipboardImportDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         .appendingPathComponent("XeeLite-Clipboard", isDirectory: true)
         .standardizedFileURL
@@ -40,9 +40,18 @@ final class AppState: ObservableObject {
     private var fileSystemRefreshWorkItem: DispatchWorkItem?
     private var isFolderScopedObservationEnabled = false
     private var currentImageFileIdentity: NSObject?
+    private var userDefaultsDidChangeCancellable: AnyCancellable?
 
     init() {
-        fileActionDestinations = Self.loadFileActionDestinations()
+        fileActionDestinations = AppPreferences.loadFileActionDestinations()
+
+        userDefaultsDidChangeCancellable = NotificationCenter.default.publisher(
+            for: UserDefaults.didChangeNotification,
+            object: UserDefaults.standard
+        )
+        .sink { [weak self] _ in
+            self?.reloadFileActionDestinationsFromDefaults()
+        }
     }
 
     func openImagePicker() {
@@ -729,9 +738,13 @@ final class AppState: ObservableObject {
     }
 
     private func persistFileActionDestinations() {
-        let encoder = JSONEncoder()
-        guard let data = try? encoder.encode(fileActionDestinations) else { return }
-        UserDefaults.standard.set(data, forKey: Self.fileActionDestinationsDefaultsKey)
+        AppPreferences.saveFileActionDestinations(fileActionDestinations)
+    }
+
+    private func reloadFileActionDestinationsFromDefaults() {
+        let storedDestinations = AppPreferences.loadFileActionDestinations()
+        guard storedDestinations != fileActionDestinations else { return }
+        fileActionDestinations = storedDestinations
     }
 
     private func refreshObservedFileSystemState() {
@@ -852,24 +865,6 @@ final class AppState: ObservableObject {
                 }
             }
         }
-    }
-
-    private static func loadFileActionDestinations() -> [FileActionDestination] {
-        let defaultSlots = (1...9).map(FileActionDestination.empty(slotNumber:))
-
-        guard
-            let data = UserDefaults.standard.data(forKey: fileActionDestinationsDefaultsKey),
-            let storedSlots = try? JSONDecoder().decode([FileActionDestination].self, from: data)
-        else {
-            return defaultSlots
-        }
-
-        var slotsByNumber = Dictionary(uniqueKeysWithValues: defaultSlots.map { ($0.slotNumber, $0) })
-        for slot in storedSlots where (1...9).contains(slot.slotNumber) {
-            slotsByNumber[slot.slotNumber] = slot
-        }
-
-        return (1...9).compactMap { slotsByNumber[$0] }
     }
 
     private static func consumeLaunchImageArgument() -> String? {

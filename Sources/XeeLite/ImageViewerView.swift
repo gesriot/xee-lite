@@ -14,6 +14,7 @@ struct ImageViewerView: View {
     @AppStorage("showsStatusBar") private var showsStatusBar = true
     @AppStorage("showsInspector") private var showsInspector = false
     @AppStorage("showsThumbnailStrip") private var showsThumbnailStrip = true
+    @AppStorage(ImageOpenZoomBehavior.appStorageKey) private var imageOpenZoomBehaviorRawValue = ImageOpenZoomBehavior.rememberCurrent.rawValue
     @StateObject private var animatedPlayback = AnimatedImagePlaybackState()
     @StateObject private var thumbnailStripState = ThumbnailStripState()
     @State private var window: NSWindow?
@@ -24,6 +25,7 @@ struct ImageViewerView: View {
     @State private var isChromeVisible = true
     @State private var autoHideWorkItem: DispatchWorkItem?
     @State private var slideshowDirection: SlideshowTransitionDirection = .forward
+    @State private var shouldApplyPreferredZoomBehavior = false
     private let fullScreenChromeInset: CGFloat = 10
     private let fullScreenAutoHideDelay: TimeInterval = 1.8
     private let inspectorWidth: CGFloat = 300
@@ -80,6 +82,7 @@ struct ImageViewerView: View {
         .onChange(of: appState.currentImageURL) { _, newURL in
             updateWindowTitle(with: newURL)
             animatedPlayback.setAnimatedImage(appState.currentAnimatedImage)
+            shouldApplyPreferredZoomBehavior = newURL != nil
             if cropState.isActive {
                 cropState.deactivate()
             }
@@ -91,6 +94,12 @@ struct ImageViewerView: View {
         }
         .onChange(of: appState.currentImagePixelSize) { _, newSize in
             zoomState.updateImagePixelSize(newSize)
+            if newSize != nil, shouldApplyPreferredZoomBehavior {
+                applyPreferredZoomBehavior()
+                shouldApplyPreferredZoomBehavior = false
+            } else if newSize == nil {
+                shouldApplyPreferredZoomBehavior = false
+            }
             if newSize == nil {
                 colorAdjustmentState.deactivate()
             }
@@ -542,6 +551,21 @@ struct ImageViewerView: View {
             window.setFrame(frame, display: true)
         } else {
             window.zoom(nil)
+        }
+    }
+
+    private func applyPreferredZoomBehavior() {
+        let behavior = ImageOpenZoomBehavior(rawValue: imageOpenZoomBehaviorRawValue) ?? .rememberCurrent
+
+        switch behavior {
+        case .rememberCurrent:
+            break
+        case .fitInWindow:
+            zoomState.fitInWindow()
+        case .fitOnScreen:
+            zoomState.fitOnScreen()
+        case .actualSize:
+            zoomState.actualSize()
         }
     }
 
