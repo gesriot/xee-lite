@@ -237,6 +237,7 @@ struct ImageViewerView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { notification in
             guard let resolvedWindow = matchingWindow(from: notification.object) else { return }
+            appState.viewerWillClose()
             viewerCoordinator.unregister(viewerSession, window: resolvedWindow)
         }
     }
@@ -270,6 +271,10 @@ struct ImageViewerView: View {
                 onJumpForward: {
                     jumpImages(by: 10)
                 },
+                canRename: appState.canRenameCurrentImage,
+                canDelete: appState.canDeleteCurrentImage,
+                canSetFinderLabel: appState.canSetFinderLabel,
+                canTransfer: appState.canTransferCurrentImage,
                 isCropActive: cropState.isActive,
                 isColorAdjustmentActive: colorAdjustmentState.isActive,
                 isSlideshowPlaying: slideshowState.isPlaying
@@ -502,7 +507,7 @@ struct ImageViewerView: View {
 
     private var statusBar: some View {
         StatusBarView(
-            fileName: appState.currentImageURL?.lastPathComponent,
+            fileName: appState.currentImageDisplayName,
             pixelSize: appState.currentImagePixelSize,
             fileSize: appState.currentImageFileSize,
             format: appState.currentImageFormatText,
@@ -1214,6 +1219,10 @@ private struct KeyboardHandlerView: NSViewRepresentable {
     let onToggleSlideshow: () -> Void
     let onJumpBackward: () -> Void
     let onJumpForward: () -> Void
+    let canRename: Bool
+    let canDelete: Bool
+    let canSetFinderLabel: Bool
+    let canTransfer: Bool
     let isCropActive: Bool
     let isColorAdjustmentActive: Bool
     let isSlideshowPlaying: Bool
@@ -1237,6 +1246,10 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         view.onToggleSlideshow = onToggleSlideshow
         view.onJumpBackward = onJumpBackward
         view.onJumpForward = onJumpForward
+        view.canRename = canRename
+        view.canDelete = canDelete
+        view.canSetFinderLabel = canSetFinderLabel
+        view.canTransfer = canTransfer
         view.isCropActive = isCropActive
         view.isColorAdjustmentActive = isColorAdjustmentActive
         view.isSlideshowPlaying = isSlideshowPlaying
@@ -1261,6 +1274,10 @@ private struct KeyboardHandlerView: NSViewRepresentable {
         nsView.onToggleSlideshow = onToggleSlideshow
         nsView.onJumpBackward = onJumpBackward
         nsView.onJumpForward = onJumpForward
+        nsView.canRename = canRename
+        nsView.canDelete = canDelete
+        nsView.canSetFinderLabel = canSetFinderLabel
+        nsView.canTransfer = canTransfer
         nsView.isCropActive = isCropActive
         nsView.isColorAdjustmentActive = isColorAdjustmentActive
         nsView.isSlideshowPlaying = isSlideshowPlaying
@@ -1285,6 +1302,10 @@ private final class KeyAwareView: NSView {
     var onToggleSlideshow: (() -> Void)?
     var onJumpBackward: (() -> Void)?
     var onJumpForward: (() -> Void)?
+    var canRename = false
+    var canDelete = false
+    var canSetFinderLabel = false
+    var canTransfer = false
     var isCropActive = false
     var isColorAdjustmentActive = false
     var isSlideshowPlaying = false
@@ -1349,12 +1370,15 @@ private final class KeyAwareView: NSView {
             }
         }
 
-        if let finderLabel = finderLabel(for: event.keyCode), modifiers == [.command, .option] {
+        if canSetFinderLabel,
+           let finderLabel = finderLabel(for: event.keyCode),
+           modifiers == [.command, .option]
+        {
             onSetFinderLabel?(finderLabel)
             return nil
         }
 
-        if let destinationSlot = destinationSlot(for: event.keyCode) {
+        if canTransfer, let destinationSlot = destinationSlot(for: event.keyCode) {
             if modifiers.isEmpty {
                 onMoveToDestinationSlot?(destinationSlot)
                 return nil
@@ -1380,14 +1404,14 @@ private final class KeyAwareView: NSView {
         case 49:
             if modifiers.isEmpty { onNext?(); return nil }
         case 51:
-            if modifiers == [.command] { onDelete?(); return nil }
+            if modifiers == [.command], canDelete { onDelete?(); return nil }
             if modifiers.isEmpty { onPrevious?(); return nil }
         case 115:
             if modifiers.isEmpty { onFirst?(); return nil }
         case 119:
             if modifiers.isEmpty { onLast?(); return nil }
         case 36, 76:
-            if modifiers.isEmpty { onRename?(); return nil }
+            if modifiers.isEmpty, canRename { onRename?(); return nil }
         default:
             break
         }

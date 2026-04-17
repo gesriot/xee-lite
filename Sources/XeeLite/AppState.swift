@@ -19,6 +19,7 @@ final class AppState: ObservableObject {
     @Published private(set) var currentImageFinderLabel: FinderLabel?
     @Published private(set) var currentMetadata = ImageMetadata(sections: [])
     @Published private(set) var currentAnimatedImage: AnimatedImage?
+    @Published private(set) var currentArchiveSource: ArchiveImageSource?
     @Published private(set) var currentImageContentVersion: UInt64 = 0
     @Published private(set) var renameRequestID: UInt64 = 0
     @Published private(set) var manageDestinationsRequestID: UInt64 = 0
@@ -41,6 +42,10 @@ final class AppState: ObservableObject {
     private var isFolderScopedObservationEnabled = false
     private var currentImageFileIdentity: NSObject?
     private var userDefaultsDidChangeCancellable: AnyCancellable?
+
+    var isViewingArchive: Bool {
+        currentArchiveSource != nil
+    }
 
     init() {
         fileActionDestinations = AppPreferences.loadFileActionDestinations()
@@ -79,6 +84,13 @@ final class AppState: ObservableObject {
 
     func loadImage(at url: URL) {
         let standardizedURL = url.standardizedFileURL
+
+        if SupportedArchiveFormats.contains(standardizedURL) {
+            openArchive(at: standardizedURL)
+            return
+        }
+
+        replaceArchiveSource(with: nil)
         let folderURL = standardizedURL.deletingLastPathComponent()
 
         do {
@@ -167,19 +179,19 @@ final class AppState: ObservableObject {
     }
 
     var canRenameCurrentImage: Bool {
-        currentImageURL != nil
+        currentImageURL != nil && !isViewingArchive
     }
 
     var canTransferCurrentImage: Bool {
-        currentImageURL != nil
+        currentImageURL != nil && !isViewingArchive
     }
 
     var canDeleteCurrentImage: Bool {
-        currentImageURL != nil
+        currentImageURL != nil && !isViewingArchive
     }
 
     var canSetFinderLabel: Bool {
-        currentImageURL != nil
+        currentImageURL != nil && !isViewingArchive
     }
 
     var canRunSlideshow: Bool {
@@ -187,7 +199,7 @@ final class AppState: ObservableObject {
     }
 
     var canCropCurrentImage: Bool {
-        currentImageURL != nil && currentImagePixelSize != nil
+        currentImageURL != nil && currentImagePixelSize != nil && !isViewingArchive
     }
 
     var canExportCurrentImage: Bool {
@@ -204,7 +216,7 @@ final class AppState: ObservableObject {
 
     var canSetDesktopPicture: Bool {
         guard let currentImageURL else { return false }
-        return !isTemporaryClipboardImageURL(currentImageURL)
+        return !isViewingArchive && !isTemporaryClipboardImageURL(currentImageURL)
     }
 
     var currentImagePositionText: String? {
@@ -215,6 +227,10 @@ final class AppState: ObservableObject {
     var currentImageFormatText: String? {
         guard let pathExtension = currentImageURL?.pathExtension.lowercased(), !pathExtension.isEmpty else { return nil }
         return SupportedImageFormats.displayName(for: pathExtension)
+    }
+
+    var currentImageDisplayName: String? {
+        currentArchiveSource?.entry(forExtractedURL: currentImageURL)?.fileName ?? currentImageURL?.lastPathComponent
     }
 
     func requestRenameCurrentImage() {
@@ -255,6 +271,14 @@ final class AppState: ObservableObject {
             return
         }
 
+        guard !isViewingArchive else {
+            presentAlert(
+                title: "Set Desktop Picture Failed",
+                message: DesktopPictureError.archiveImage.localizedDescription
+            )
+            return
+        }
+
         guard !isTemporaryClipboardImageURL(currentImageURL) else {
             presentAlert(
                 title: "Set Desktop Picture Failed",
@@ -281,6 +305,19 @@ final class AppState: ObservableObject {
                 message: error.localizedDescription
             )
         }
+    }
+
+    func showArchiveEntry(at extractedURL: URL) {
+        let standardizedURL = extractedURL.standardizedFileURL
+
+        if let archiveIndex = currentArchiveSource?.entries.firstIndex(where: {
+            $0.extractedURL.standardizedFileURL == standardizedURL
+        }) {
+            showImage(at: archiveIndex)
+            return
+        }
+
+        openImageInViewer(at: standardizedURL)
     }
 
     func pasteImageFromClipboard() {
@@ -324,6 +361,50 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func openArchive(at archiveURL: URL) {
+        do {
+            let archiveSource = try ArchiveImageSourceLoader.load(from: archiveURL, passphrase: nil)
+            installArchiveSource(archiveSource)
+        } catch let error as ArchiveImageSourceError {
+            switch error {
+            case .passwordRequired:
+                promptToOpenArchive(at: archiveURL, invalidPassword: false)
+            default:
+                if let description = error.errorDescription {
+                    presentAlert(title: "Open Archive Failed", message: description)
+                }
+            }
+        } catch {
+            presentAlert(title: "Open Archive Failed", message: error.localizedDescription)
+        }
+    }
+
+    private func promptToOpenArchive(at archiveURL: URL, invalidPassword: Bool) {
+        var showsInvalidPasswordState = invalidPassword
+
+        while let passphrase = promptArchivePassphrase(for: archiveURL, invalidPassword: showsInvalidPasswordState) {
+            do {
+                let archiveSource = try ArchiveImageSourceLoader.load(from: archiveURL, passphrase: passphrase)
+                installArchiveSource(archiveSource)
+                return
+            } catch let error as ArchiveImageSourceError {
+                switch error {
+                case .incorrectPassword, .passwordRequired:
+                    showsInvalidPasswordState = true
+                    continue
+                default:
+                    if let description = error.errorDescription {
+                        presentAlert(title: "Open Archive Failed", message: description)
+                    }
+                    return
+                }
+            } catch {
+                presentAlert(title: "Open Archive Failed", message: error.localizedDescription)
+                return
+            }
+        }
+    }
+
     func setFileActionDestination(_ folderURL: URL, forSlot slotNumber: Int) {
         guard (1...9).contains(slotNumber) else { return }
         updateFileActionDestination(
@@ -346,6 +427,8 @@ final class AppState: ObservableObject {
     }
 
     func trashCurrentImage() {
+        guard canDeleteCurrentImage else { return }
+
         guard let currentImageURL else {
             presentAlert(
                 title: "Move to Trash Failed",
@@ -358,6 +441,8 @@ final class AppState: ObservableObject {
     }
 
     func setFinderLabel(_ label: FinderLabel) {
+        guard canSetFinderLabel else { return }
+
         guard let currentImageURL = currentImageURL?.standardizedFileURL else {
             presentAlert(
                 title: "Set Finder Label Failed",
@@ -412,6 +497,16 @@ final class AppState: ObservableObject {
         viewerWindow = window
     }
 
+    func viewerWillClose() {
+        fileActionMessageDismissWorkItem?.cancel()
+        fileSystemRefreshWorkItem?.cancel()
+        folderWatcher = nil
+        currentFileWatcher = nil
+        watchedFolderURL = nil
+        watchedFileURL = nil
+        replaceArchiveSource(with: nil)
+    }
+
     func openImageInViewer(at url: URL) {
         loadImage(at: url)
         viewerWindow?.makeKeyAndOrderFront(nil)
@@ -455,6 +550,7 @@ final class AppState: ObservableObject {
 
     private func updateDisplayedImage() {
         guard imageURLs.indices.contains(currentIndex) else {
+            replaceArchiveSource(with: nil)
             currentImage = nil
             currentImageURL = nil
             currentImagePixelSize = nil
@@ -499,6 +595,7 @@ final class AppState: ObservableObject {
 
     private func setSingleImage(url: URL, error: Error? = nil) {
         let standardizedURL = url.standardizedFileURL
+        replaceArchiveSource(with: nil)
         isFolderScopedObservationEnabled = false
         imageURLs = [standardizedURL]
         currentIndex = 0
@@ -525,6 +622,14 @@ final class AppState: ObservableObject {
 
         bumpCurrentImageContentVersion()
         refreshFileSystemWatchers()
+    }
+
+    private func installArchiveSource(_ archiveSource: ArchiveImageSource) {
+        replaceArchiveSource(with: archiveSource)
+        isFolderScopedObservationEnabled = false
+        imageURLs = archiveSource.entries.map(\.extractedURL)
+        currentIndex = 0
+        updateDisplayedImage()
     }
 
     private func pixelSize(for image: NSImage) -> CGSize? {
@@ -595,6 +700,8 @@ final class AppState: ObservableObject {
     }
 
     private func performCurrentImageTransfer(_ action: FileTransferAction, toDestinationSlot slotNumber: Int) {
+        guard canTransferCurrentImage else { return }
+
         guard let currentImageURL = currentImageURL?.standardizedFileURL else {
             presentAlert(
                 title: "\(action.verb) Failed",
@@ -699,6 +806,7 @@ final class AppState: ObservableObject {
     }
 
     private func clearCurrentImageState() {
+        replaceArchiveSource(with: nil)
         isFolderScopedObservationEnabled = false
         imageURLs = []
         currentIndex = 0
@@ -833,6 +941,14 @@ final class AppState: ObservableObject {
     }
 
     private func refreshFileSystemWatchers() {
+        if currentArchiveSource != nil {
+            watchedFolderURL = nil
+            folderWatcher = nil
+            watchedFileURL = nil
+            currentFileWatcher = nil
+            return
+        }
+
         let currentURL = currentImageURL?.standardizedFileURL
         let folderURL = isFolderScopedObservationEnabled ? currentURL?.deletingLastPathComponent() : nil
 
@@ -865,6 +981,38 @@ final class AppState: ObservableObject {
                 }
             }
         }
+    }
+
+    private func replaceArchiveSource(with archiveSource: ArchiveImageSource?) {
+        let previousArchiveSource = currentArchiveSource
+        currentArchiveSource = archiveSource
+
+        if previousArchiveSource?.extractedRootURL != archiveSource?.extractedRootURL {
+            ArchiveImageSourceLoader.cleanup(previousArchiveSource)
+        }
+    }
+
+    private func promptArchivePassphrase(for archiveURL: URL, invalidPassword: Bool) -> String? {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = invalidPassword ? "Incorrect Archive Password" : "Archive Password Required"
+        alert.informativeText = invalidPassword
+            ? "The password for \"\(archiveURL.lastPathComponent)\" was incorrect. Enter it again to view images inside the archive."
+            : "\"\(archiveURL.lastPathComponent)\" is password-protected. Enter the password to view images inside the archive."
+        alert.addButton(withTitle: "Open")
+        alert.addButton(withTitle: "Cancel")
+
+        let secureField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        secureField.placeholderString = "Password"
+        secureField.lineBreakMode = .byTruncatingTail
+        alert.accessoryView = secureField
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return nil }
+
+        let passphrase = secureField.stringValue
+        guard !passphrase.isEmpty else { return nil }
+        return passphrase
     }
 
     private static func consumeLaunchImageArgument() -> String? {
@@ -1005,6 +1153,7 @@ private enum RenameImageError: LocalizedError {
 private enum DesktopPictureError: LocalizedError {
     case noScreen
     case temporaryClipboardImage
+    case archiveImage
 
     var errorDescription: String? {
         switch self {
@@ -1012,6 +1161,8 @@ private enum DesktopPictureError: LocalizedError {
             return "Couldn't determine which display should receive the desktop picture."
         case .temporaryClipboardImage:
             return "Clipboard images need to be saved as a regular file before they can be used as a desktop picture."
+        case .archiveImage:
+            return "Images opened from archives need to be exported first before they can be used as a desktop picture."
         }
     }
 }

@@ -148,6 +148,10 @@ struct FolderBrowserView: View {
     }
 
     private var currentFolderTitle: String {
+        if let archiveURL = viewerCoordinator.browserArchiveURL {
+            return archiveURL.lastPathComponent
+        }
+
         let folderURL = viewerCoordinator.browserCurrentImageURL?.deletingLastPathComponent()
             ?? viewerCoordinator.browserImageURLs.first?.deletingLastPathComponent()
 
@@ -159,15 +163,16 @@ struct FolderBrowserView: View {
             return "Open an image in the main viewer first."
         }
 
+        let sourceKind = viewerCoordinator.browserArchiveURL == nil ? "folder" : "archive"
         let totalCount = browserState.allEntries.count
         let visibleCount = browserState.visibleEntries.count
 
         if browserState.isLoading, totalCount == 0 {
-            return "Loading current folder…"
+            return "Loading current \(sourceKind)…"
         }
 
         if browserState.formatFilter == FolderBrowserState.allFormatsFilterValue {
-            return "\(visibleCount) image\(visibleCount == 1 ? "" : "s") in the current folder"
+            return "\(visibleCount) image\(visibleCount == 1 ? "" : "s") in the current \(sourceKind)"
         }
 
         return "\(visibleCount) of \(totalCount) images shown"

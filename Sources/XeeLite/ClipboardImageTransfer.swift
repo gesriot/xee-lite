@@ -59,7 +59,7 @@ enum ClipboardImageTransfer {
                     return
                 }
 
-                guard let url = resolvedFileURL(from: item), isSupportedImageURL(url) else {
+                guard let url = resolvedFileURL(from: item), isSupportedSourceURL(url) else {
                     Task { @MainActor in
                         completion(.failure(ClipboardImageTransferError.unsupportedContent))
                     }
@@ -112,7 +112,7 @@ enum ClipboardImageTransfer {
         ]
 
         let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL] ?? []
-        return urls.first(where: isSupportedImageURL(_:))?.standardizedFileURL
+        return urls.first(where: isSupportedSourceURL(_:))?.standardizedFileURL
     }
 
     private static func resolvedFileURL(from item: NSSecureCoding?) -> URL? {
@@ -130,7 +130,8 @@ enum ClipboardImageTransfer {
         }
     }
 
-    private static func isSupportedImageURL(_ url: URL) -> Bool {
+    private static func isSupportedSourceURL(_ url: URL) -> Bool {
         SupportedImageFormats.folderExtensions.contains(url.pathExtension.lowercased())
+            || SupportedArchiveFormats.contains(url)
     }
 }

@@ -354,6 +354,32 @@
                 <string>com.adobe.raw-image</string>
             </array>
         </dict>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>zip</string>
+                <string>rar</string>
+                <string>7z</string>
+                <string>tar</string>
+                <string>tgz</string>
+                <string>tbz2</string>
+                <string>tbz</string>
+                <string>txz</string>
+                <string>tar.gz</string>
+                <string>tar.bz2</string>
+                <string>tar.xz</string>
+                <string>cbz</string>
+                <string>cbr</string>
+                <string>cb7</string>
+                <string>cbt</string>
+            </array>
+            <key>CFBundleTypeName</key>
+            <string>Archive image collection</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+        </dict>
     </array>
     <key>CFBundleExecutable</key>
     <string>XeeLite</string>
@@ -373,6 +399,8 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>LSMultipleInstancesProhibited</key>
+    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>UTImportedTypeDeclarations</key>

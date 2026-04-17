@@ -11,6 +11,7 @@ struct XeeLiteApp: App {
 
     init() {
         NSWindow.allowsAutomaticWindowTabbing = true
+        ArchiveImageSourceLoader.cleanupStaleExtractions()
     }
 
     var body: some Scene {

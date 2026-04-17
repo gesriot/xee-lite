@@ -9,6 +9,7 @@ final class ViewerCoordinator: ObservableObject {
     @Published private(set) var activeSession: ViewerSession?
     @Published private(set) var browserImageURLs: [URL] = []
     @Published private(set) var browserCurrentImageURL: URL?
+    @Published private(set) var browserArchiveURL: URL?
 
     private var browserSourceSession: ViewerSession?
     private var browserSourceCancellable: AnyCancellable?
@@ -53,7 +54,7 @@ final class ViewerCoordinator: ObservableObject {
 
     func openImageInBrowserSourceViewer(at url: URL) {
         let targetSession = browserSourceSession ?? activeSession
-        targetSession?.appState.openImageInViewer(at: url)
+        targetSession?.appState.showArchiveEntry(at: url)
 
         if let targetSession {
             activeSession = targetSession
@@ -69,19 +70,23 @@ final class ViewerCoordinator: ObservableObject {
         guard let session else {
             browserImageURLs = []
             browserCurrentImageURL = nil
+            browserArchiveURL = nil
             return
         }
 
         browserImageURLs = session.appState.imageURLs
         browserCurrentImageURL = session.appState.currentImageURL
+        browserArchiveURL = session.appState.currentArchiveSource?.archiveURL
 
-        browserSourceCancellable = Publishers.CombineLatest(
+        browserSourceCancellable = Publishers.CombineLatest3(
             session.appState.$imageURLs,
-            session.appState.$currentImageURL
+            session.appState.$currentImageURL,
+            session.appState.$currentArchiveSource
         )
-        .sink { [weak self] imageURLs, currentImageURL in
+        .sink { [weak self] imageURLs, currentImageURL, currentArchiveSource in
             self?.browserImageURLs = imageURLs
             self?.browserCurrentImageURL = currentImageURL
+            self?.browserArchiveURL = currentArchiveSource?.archiveURL
         }
     }
 }
