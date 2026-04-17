@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct MetadataInspectorView: View {
+    @Environment(\.xeeThemePalette) private var theme
     let metadata: ImageMetadata
     let isFullScreen: Bool
 
@@ -13,7 +14,7 @@ struct MetadataInspectorView: View {
             HStack {
                 Text("Inspector")
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(theme.inspectorPrimaryText)
 
                 Spacer()
             }
@@ -24,12 +25,12 @@ struct MetadataInspectorView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("No metadata found")
                         .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.inspectorPrimaryText)
                     Text("This image does not expose EXIF, IPTC, GPS, or XMP fields.")
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.inspectorSecondaryText)
                 }
                 .padding(14)
-                .foregroundStyle(.white.opacity(0.82))
 
                 Spacer(minLength: 0)
             } else {
@@ -57,11 +58,11 @@ struct MetadataInspectorView: View {
                                 label: {
                                     Text(section.title)
                                         .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                        .foregroundStyle(.white.opacity(0.92))
+                                        .foregroundStyle(theme.inspectorPrimaryText)
                                 }
                             )
                             .padding(12)
-                            .background(.white.opacity(isFullScreen ? 0.05 : 0.04))
+                            .background(isFullScreen ? theme.inspectorSectionBackgroundFullScreen : theme.inspectorSectionBackgroundWindowed)
                             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         }
                     }
@@ -74,7 +75,7 @@ struct MetadataInspectorView: View {
         .background(backgroundColor)
         .overlay(alignment: .leading) {
             Rectangle()
-                .fill(.white.opacity(isFullScreen ? 0.1 : 0.08))
+                .fill(isFullScreen ? theme.inspectorBorderFullScreen : theme.inspectorBorderWindowed)
                 .frame(width: 1)
         }
         .onAppear {
@@ -88,7 +89,7 @@ struct MetadataInspectorView: View {
     }
 
     private var backgroundColor: Color {
-        isFullScreen ? Color.black.opacity(0.5) : Color.black.opacity(0.72)
+        isFullScreen ? theme.inspectorBackgroundFullScreen : theme.inspectorBackgroundWindowed
     }
 
     private func binding(for sectionTitle: String) -> Binding<Bool> {
@@ -122,6 +123,7 @@ struct MetadataInspectorView: View {
 }
 
 private struct MetadataRowView: View {
+    @Environment(\.xeeThemePalette) private var theme
     let item: MetadataItem
     let isCopied: Bool
     let onCopy: () -> Void
@@ -131,12 +133,12 @@ private struct MetadataRowView: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(item.key)
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(theme.inspectorMutedText)
                     .frame(width: 96, alignment: .leading)
 
                 Text(item.value)
                     .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.88))
+                    .foregroundStyle(theme.inspectorSecondaryText)
                     .multilineTextAlignment(.leading)
                     .textSelection(.enabled)
 
@@ -145,7 +147,7 @@ private struct MetadataRowView: View {
                 if isCopied {
                     Text("Copied")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.green.opacity(0.95))
+                        .foregroundStyle(theme.inspectorCopiedText)
                 }
             }
             .padding(.horizontal, 10)
@@ -153,7 +155,7 @@ private struct MetadataRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(.white.opacity(0.02))
+        .background(theme.inspectorRowBackground)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }

@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct StatusBarView: View {
+    @Environment(\.xeeThemePalette) private var theme
+
     let fileName: String?
     let pixelSize: CGSize?
     let fileSize: Int64?
@@ -27,7 +29,7 @@ struct StatusBarView: View {
             if let cropState {
                 HStack(spacing: 6) {
                     Text("Crop")
-                        .foregroundStyle(.white.opacity(0.96))
+                        .foregroundStyle(theme.chromePrimaryText)
 
                     Menu(cropState.aspectRatioPreset.title) {
                         ForEach(CropAspectRatioPreset.allCases) { preset in
@@ -42,7 +44,7 @@ struct StatusBarView: View {
                     if let selectionText = cropState.selectionText {
                         Text(selectionText)
                             .monospacedDigit()
-                            .foregroundStyle(.white.opacity(0.78))
+                            .foregroundStyle(theme.chromeSecondaryText)
                     }
 
                     Button("Save") {
@@ -124,7 +126,7 @@ struct StatusBarView: View {
                     if let frameText = animationState.frameText {
                         Text(frameText)
                             .monospacedDigit()
-                            .foregroundStyle(.white.opacity(0.74))
+                            .foregroundStyle(theme.chromeSecondaryText)
                     }
                 }
                 .buttonStyle(.plain)
@@ -142,7 +144,7 @@ struct StatusBarView: View {
                 separator
                 Text(actionMessage)
                     .lineLimit(1)
-                    .foregroundStyle(.white.opacity(0.96))
+                    .foregroundStyle(theme.chromePrimaryText)
             }
 
             ForEach(Array(metadataItems.enumerated()), id: \.offset) { _, item in
@@ -155,7 +157,7 @@ struct StatusBarView: View {
 
             if let positionText {
                 Text(positionText)
-                    .foregroundStyle(.white.opacity(0.74))
+                    .foregroundStyle(theme.chromeSecondaryText)
 
                 separator
             }
@@ -164,13 +166,13 @@ struct StatusBarView: View {
                 .monospacedDigit()
         }
         .font(.system(size: 11, weight: .medium, design: .rounded))
-        .foregroundStyle(.white.opacity(0.84))
+        .foregroundStyle(theme.chromeSecondaryText)
         .padding(.horizontal, 12)
         .frame(height: 26)
-        .background(isFullScreen ? Color.black.opacity(0.58) : Color.black.opacity(0.84))
+        .background(isFullScreen ? theme.chromeBackgroundFullScreen : theme.chromeBackgroundWindowed)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(.white.opacity(isFullScreen ? 0.10 : 0.08))
+                .fill(isFullScreen ? theme.chromeBorderFullScreen : theme.chromeBorderWindowed)
                 .frame(height: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: isFullScreen ? 8 : 0, style: .continuous))
@@ -196,7 +198,7 @@ struct StatusBarView: View {
 
     private var separator: some View {
         Text("•")
-            .foregroundStyle(.white.opacity(0.34))
+            .foregroundStyle(theme.chromeMutedText)
     }
 
     private func rateLabel(for rate: Double) -> String {

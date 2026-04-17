@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ThumbnailStripView: View {
+    @Environment(\.xeeThemePalette) private var theme
     @ObservedObject var thumbnailStripState: ThumbnailStripState
 
     let imageURLs: [URL]
@@ -34,10 +35,10 @@ struct ThumbnailStripView: View {
                 .padding(.vertical, 10)
             }
             .frame(height: 88)
-            .background(isFullScreen ? Color.black.opacity(0.58) : Color.black.opacity(0.84))
+            .background(isFullScreen ? theme.chromeBackgroundFullScreen : theme.chromeBackgroundWindowed)
             .overlay(alignment: .top) {
                 Rectangle()
-                    .fill(.white.opacity(isFullScreen ? 0.10 : 0.08))
+                    .fill(isFullScreen ? theme.chromeBorderFullScreen : theme.chromeBorderWindowed)
                     .frame(height: 1)
             }
             .clipShape(RoundedRectangle(cornerRadius: isFullScreen ? 12 : 0, style: .continuous))
@@ -56,7 +57,7 @@ struct ThumbnailStripView: View {
 
         ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(.white.opacity(isSelected ? 0.12 : 0.04))
+                .fill(isSelected ? theme.chromeSelectionFillStrong : theme.chromeSelectionFill)
 
             if let thumbnail {
                 Image(nsImage: thumbnail)
@@ -67,14 +68,14 @@ struct ThumbnailStripView: View {
             } else {
                 Image(systemName: "photo")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.46))
+                    .foregroundStyle(theme.chromeSecondaryText)
             }
         }
         .frame(width: thumbnailSize.width, height: thumbnailSize.height)
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(
-                    isSelected ? .white.opacity(0.94) : .white.opacity(0.10),
+                    isSelected ? theme.chromeSelectionBorderStrong : theme.chromeSelectionBorder,
                     lineWidth: isSelected ? 2 : 1
                 )
         }
@@ -82,9 +83,9 @@ struct ThumbnailStripView: View {
             if isSelected {
                 Image(systemName: "eye.fill")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.black.opacity(0.86))
+                    .foregroundStyle(theme.chromeBadgeText)
                     .padding(5)
-                    .background(.white.opacity(0.94), in: Circle())
+                    .background(theme.chromeBadgeBackground, in: Circle())
                     .padding(6)
             }
         }

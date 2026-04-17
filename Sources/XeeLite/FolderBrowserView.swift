@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct FolderBrowserView: View {
+    @Environment(\.xeeThemePalette) private var theme
     @EnvironmentObject private var viewerCoordinator: ViewerCoordinator
     @StateObject private var browserState = FolderBrowserState()
     @StateObject private var thumbnailState = ThumbnailStripState()
@@ -13,7 +14,7 @@ struct FolderBrowserView: View {
             header
 
             Divider()
-                .overlay(.white.opacity(0.08))
+                .overlay(theme.browserDivider)
 
             content
         }
@@ -21,14 +22,14 @@ struct FolderBrowserView: View {
         .background(
             LinearGradient(
                 colors: [
-                    Color.black.opacity(0.96),
-                    Color.black.opacity(0.88)
+                    theme.browserGradientTop,
+                    theme.browserGradientBottom
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
         )
-        .foregroundStyle(.white)
+        .foregroundStyle(theme.browserPrimaryText)
         .onAppear {
             refreshBrowserData(using: viewerCoordinator.browserImageURLs)
         }
@@ -46,7 +47,7 @@ struct FolderBrowserView: View {
 
                 Text(summaryText)
                     .font(.callout)
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(theme.browserSecondaryText)
                     .lineLimit(1)
             }
 
@@ -70,7 +71,7 @@ struct FolderBrowserView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
-        .background(Color.black.opacity(0.74))
+        .background(theme.browserHeaderBackground)
     }
 
     @ViewBuilder
@@ -122,7 +123,7 @@ struct FolderBrowserView: View {
                 .font(.title3.weight(.semibold))
 
             Text("Collecting file metadata and preparing thumbnails.")
-                .foregroundStyle(.white.opacity(0.62))
+                .foregroundStyle(theme.browserSecondaryText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -133,7 +134,7 @@ struct FolderBrowserView: View {
                 .font(.title3.weight(.semibold))
 
             Text(message)
-                .foregroundStyle(.white.opacity(0.62))
+                .foregroundStyle(theme.browserSecondaryText)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
         }
@@ -195,6 +196,7 @@ struct FolderBrowserView: View {
 }
 
 private struct FolderBrowserCellView: View {
+    @Environment(\.xeeThemePalette) private var theme
     let entry: FolderBrowserEntry
     let thumbnail: NSImage?
     let isCurrentImage: Bool
@@ -205,7 +207,7 @@ private struct FolderBrowserCellView: View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(.white.opacity(isCurrentImage ? 0.10 : 0.04))
+                    .fill(isCurrentImage ? theme.browserCardFillStrong : theme.browserCardFill)
 
                 if let thumbnail {
                     Image(nsImage: thumbnail)
@@ -216,7 +218,7 @@ private struct FolderBrowserCellView: View {
                 } else {
                     Image(systemName: "photo")
                         .font(.system(size: 26, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.36))
+                        .foregroundStyle(theme.browserPlaceholder)
                 }
             }
             .frame(height: 150)
@@ -226,8 +228,8 @@ private struct FolderBrowserCellView: View {
                         .font(.system(size: 10, weight: .bold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
-                        .background(.white.opacity(0.94), in: Capsule())
-                        .foregroundStyle(.black.opacity(0.86))
+                        .background(theme.browserBadgeBackground, in: Capsule())
+                        .foregroundStyle(theme.browserBadgeText)
                         .padding(10)
                 }
             }
@@ -235,13 +237,13 @@ private struct FolderBrowserCellView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(entry.fileName)
                     .font(.system(size: 13, weight: isCurrentImage ? .semibold : .regular))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(theme.browserPrimaryText)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
                 Text(metadataText)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.58))
+                    .foregroundStyle(theme.browserSecondaryText)
                     .lineLimit(2)
             }
         }
@@ -249,12 +251,12 @@ private struct FolderBrowserCellView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.white.opacity(isCurrentImage ? 0.08 : 0.02))
+                .fill(isCurrentImage ? theme.browserCardFillStrong : theme.browserCardFill)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(
-                    isCurrentImage ? .white.opacity(0.86) : .white.opacity(0.08),
+                    isCurrentImage ? theme.browserCardBorderStrong : theme.browserCardBorder,
                     lineWidth: isCurrentImage ? 2 : 1
                 )
         }

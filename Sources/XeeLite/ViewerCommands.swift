@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct CommonAppCommands: Commands {
+    @AppStorage(AppThemePreference.appStorageKey) private var themePreferenceRawValue = AppThemePreference.automatic.rawValue
     @AppStorage("showsStatusBar") private var showsStatusBar = true
     @AppStorage("showsInspector") private var showsInspector = false
     @AppStorage("showsThumbnailStrip") private var showsThumbnailStrip = true
@@ -53,6 +54,19 @@ struct CommonAppCommands: Commands {
             }
             .keyboardShortcut("b", modifiers: [.command])
         }
+
+        CommandMenu("Appearance") {
+            ForEach(AppThemePreference.allCases) { preference in
+                Button(themeMenuTitle(for: preference)) {
+                    themePreferenceRawValue = preference.rawValue
+                }
+            }
+        }
+    }
+
+    private func themeMenuTitle(for preference: AppThemePreference) -> String {
+        let currentPreference = AppThemePreference(rawValue: themePreferenceRawValue) ?? .automatic
+        return currentPreference == preference ? "✓ \(preference.title)" : preference.title
     }
 }
 

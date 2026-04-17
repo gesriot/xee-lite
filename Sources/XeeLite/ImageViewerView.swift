@@ -3,6 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ImageViewerView: View {
+    @Environment(\.xeeThemePalette) private var theme
     @EnvironmentObject private var viewerCoordinator: ViewerCoordinator
     @EnvironmentObject private var viewerSession: ViewerSession
     @EnvironmentObject private var appState: AppState
@@ -33,19 +34,19 @@ struct ImageViewerView: View {
 
     private var baseStyledContent: some View {
         rootContent
-        .background(Color.black.opacity(0.92))
+        .background(theme.viewerBackground)
         .overlay {
             if isDropTargeted {
                 RoundedRectangle(cornerRadius: isFullScreen ? 16 : 12, style: .continuous)
-                    .strokeBorder(.white.opacity(0.75), style: StrokeStyle(lineWidth: 3, dash: [10, 8]))
+                    .strokeBorder(theme.dropTargetStroke, style: StrokeStyle(lineWidth: 3, dash: [10, 8]))
                     .padding(isFullScreen ? 16 : 12)
                     .overlay {
                         Text("Drop Image to Open")
                             .font(.headline.weight(.semibold))
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
-                            .background(Color.black.opacity(0.7), in: Capsule())
-                            .foregroundStyle(.white)
+                            .background(theme.dropTargetBubbleBackground, in: Capsule())
+                            .foregroundStyle(theme.dropTargetBubbleText)
                     }
                     .allowsHitTesting(false)
             }
@@ -397,7 +398,7 @@ struct ImageViewerView: View {
     @ViewBuilder
     private var viewerContent: some View {
         ZStack {
-            Color.black.opacity(0.92)
+            theme.viewerBackground
                 .ignoresSafeArea()
 
             if let foregroundImage = displayedImage {
@@ -479,13 +480,13 @@ struct ImageViewerView: View {
                     Text("No image loaded")
                         .font(.title2.weight(.semibold))
                     Text("Choose an image to start browsing the folder.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.viewerSecondaryText)
                     Button("Open Image") {
                         appState.openImagePicker()
                     }
                 }
                 .padding(24)
-                .foregroundStyle(.white)
+                .foregroundStyle(theme.viewerPrimaryText)
             }
         }
     }

@@ -15,13 +15,17 @@ struct XeeLiteApp: App {
 
     var body: some Scene {
         WindowGroup(id: Self.viewerWindowID) {
-            ViewerSceneView()
-                .environmentObject(viewerCoordinator)
+            XeeThemedSceneRoot {
+                ViewerSceneView()
+                    .environmentObject(viewerCoordinator)
+            }
         }
 
         Window("Browser", id: Self.browserWindowID) {
-            FolderBrowserView()
-                .environmentObject(viewerCoordinator)
+            XeeThemedSceneRoot {
+                FolderBrowserView()
+                    .environmentObject(viewerCoordinator)
+            }
         }
         .defaultSize(width: 1040, height: 720)
         .commands {

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ColorAdjustmentPanelView: View {
+    @Environment(\.xeeThemePalette) private var theme
     @ObservedObject var colorAdjustmentState: ColorAdjustmentState
     let onPointerActivity: () -> Void
     let onClose: () -> Void
@@ -10,7 +11,7 @@ struct ColorAdjustmentPanelView: View {
             HStack {
                 Text("Adjust Color")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(theme.floatingPanelPrimaryText)
 
                 Spacer(minLength: 12)
 
@@ -18,14 +19,14 @@ struct ColorAdjustmentPanelView: View {
                     colorAdjustmentState.reset()
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(colorAdjustmentState.canReset ? 0.84 : 0.36))
+                .foregroundStyle(colorAdjustmentState.canReset ? theme.floatingPanelSecondaryText : theme.floatingPanelMutedText)
                 .disabled(!colorAdjustmentState.canReset)
 
                 Button {
                     onClose()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.white.opacity(0.82))
+                        .foregroundStyle(theme.floatingPanelSecondaryText)
                 }
                 .buttonStyle(.plain)
             }
@@ -55,13 +56,13 @@ struct ColorAdjustmentPanelView: View {
         .frame(width: 272)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.black.opacity(0.72))
+                .fill(theme.floatingPanelBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(.white.opacity(0.10), lineWidth: 1)
+                .stroke(theme.floatingPanelBorder, lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 10)
+        .shadow(color: theme.floatingPanelShadow, radius: 18, x: 0, y: 10)
         .onHover { hovering in
             if hovering {
                 onPointerActivity()
@@ -101,17 +102,17 @@ struct ColorAdjustmentPanelView: View {
             HStack {
                 Text(title)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.86))
+                    .foregroundStyle(theme.floatingPanelSecondaryText)
 
                 Spacer(minLength: 12)
 
                 Text(formattedValue)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(theme.floatingPanelMutedText)
             }
 
             Slider(value: value, in: range)
-                .tint(.white)
+                .tint(theme.floatingPanelTint)
         }
     }
 }
