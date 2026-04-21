@@ -75,7 +75,7 @@ Opens an image or archive, discovers everything else in the same folder, and get
 - Open **ZIP, RAR, 7z, TAR** and related bundles (`.cbz`, `.cbr`, `.cb7`, `.cbt`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tgz`, `.tbz`, `.tbz2`, `.txz`) and page through images inside just like a folder
 - Password-protected archives prompt for a passphrase and retry on incorrect input
 - Extracted contents live in a temporary scratch directory that is wiped on close and swept on next launch after a crash or force-quit
-- Built on top of the system `bsdtar` / libarchive — no bundled dependencies
+- Built on top of the system `bsdtar` / libarchive – no bundled dependencies
 - Archive mode disables file mutations (rename, trash, move/copy, Finder labels, crop-over-source, set-as-desktop) since the source is read-only
 
 ### Export and conversion
@@ -90,7 +90,7 @@ Opens an image or archive, discovers everything else in the same folder, and get
 
 ### Clipboard and drag & drop
 - `⌘C` copies the current image to the system pasteboard (archive entries supported)
-- `⌘V` opens an image from the clipboard — a temporary file is created in a dedicated scratch directory and loaded into the active viewer
+- `⌘V` opens an image from the clipboard – a temporary file is created in a dedicated scratch directory and loaded into the active viewer
 - Drop any supported image file (or a folder of images) onto the viewer window to open it
 - Clipboard-sourced images are exempt from **Set as Desktop Picture** because the OS would clean them up underneath the desktop
 
@@ -111,11 +111,11 @@ Opens an image or archive, discovers everything else in the same folder, and get
 
 ### Preferences (`⌘,`)
 Native macOS Settings scene with sections for:
-- **Appearance** — theme selection
-- **Viewing** — zoom behavior when opening a new image (remember current, fit in window, fit on screen, actual size)
-- **Transfer Destinations** — configure the nine move/copy slots
-- **Slideshow** — default interval and transition style; changes apply to running viewer windows on the next start / pause cycle
-- **Keyboard Shortcuts** — full reference list
+- **Appearance** – theme selection
+- **Viewing** – zoom behavior when opening a new image (remember current, fit in window, fit on screen, actual size)
+- **Transfer Destinations** – configure the nine move/copy slots
+- **Slideshow** – default interval and transition style; changes apply to running viewer windows on the next start / pause cycle
+- **Keyboard Shortcuts** – full reference list
 
 ### Status bar
 Displays filename, pixel dimensions, file size, format, folder position (N/M), and current zoom level. Also hosts slideshow, animation, and crop controls when those modes are active. Toggle with `⌘/`.
